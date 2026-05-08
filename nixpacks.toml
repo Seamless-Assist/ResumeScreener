@@ -1,0 +1,5 @@
+# Nixpacks configuration for Coolify
+# Bypasses setuptools compilation errors by forcing pip installation
+
+[variables]
+NIXPACKS_PYTHON_PACKAGE_MANAGER = "pip"
