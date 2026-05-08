@@ -1,0 +1,54 @@
+Automation & AI Developer (Remote)
+Location: Remote
+Type: Full-time (40 hrs/week)
+Hours: Must overlap with US Pacific Time
+Role Overview
+We are hiring an Automation & AI Developer to design and build AI-powered systems that improve business operations.
+This role combines technical execution with strategic thinking. You will assess workflows, identify automation opportunities, and build scalable solutions using AI tools and automation platforms. You'll also create clear documentation and enable non-technical teams to operate systems independently.
+This is a client-facing role requiring both strong technical ability and the ability to communicate solutions clearly.
+Key Responsibilities
+AI Strategy & Solution Design
+•	Analyze business operations and identify automation opportunities
+•	Define clear automation hypotheses and expected outcomes
+•	Design scalable AI and automation architectures
+•	Present recommendations to stakeholders
+Automation Development
+•	Build end-to-end automations using tools like Zapier or Make
+•	Integrate AI tools (e.g., ChatGPT, Claude) into workflows
+•	Test, deploy, and optimize automation systems
+•	Create reusable templates and systems
+Systems & Infrastructure
+•	Manage and maintain WordPress environments
+•	Handle hosting, domains, and basic server administration
+•	Support integrations across tools and platforms
+•	Monitor system performance and proactively resolve issues
+Documentation & Enablement
+•	Write clear, step-by-step documentation for non-technical users
+•	Train team members on using and maintaining systems
+•	Contribute to internal knowledge base and best practices
+Requirements
+•	Background in software development or system architecture
+•	Hands-on experience with automation tools (Zapier and/or Make)
+•	Experience using AI tools in development workflows (ChatGPT, Claude, etc.)
+•	Strong understanding of LLM capabilities and limitations
+•	Experience with GitHub (version control, repositories)
+•	Experience with cloud infrastructure / virtual servers
+•	WordPress development or administration experience
+•	Strong written English and documentation skills
+•	Ability to work with US Pacific Time overlap
+Preferred Qualifications
+•	Experience with Python or similar scripting language
+•	Familiarity with tools like GoHighLevel, Mindbody, or Acuity
+•	Experience in client-facing or consulting environments
+•	Experience assessing systems and recommending automation solutions
+What We're Looking For
+•	Strong problem-solver who thinks in systems, not tasks
+•	Able to balance strategy and execution
+•	Clear communicator who can explain technical concepts simply
+•	Proactive and comfortable working independently
+•	Practical mindset — tests ideas before scaling
+Success in This Role
+•	Deliver working automation systems that improve real workflows
+•	Create documentation that enables non-technical users
+•	Build scalable, reliable solutions
+•	Contribute to continuous improvement of internal systems

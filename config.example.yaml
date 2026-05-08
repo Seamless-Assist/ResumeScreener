@@ -1,0 +1,53 @@
+# SACandidateFinder Configuration
+# Copy this file to config.yaml and fill in your values.
+# Secrets are intentionally NOT stored in config.
+# Set them in src/sa_candidate_finder/secrets.py for this temporary phase.
+
+# --- Pipeline settings ---
+max_hard_constraints: 3       # Max keywords LLM extracts per JD
+max_keyword_set: 8            # Max total scoring keywords after user overrides are reconciled
+min_pool_size: 200             # Minimum candidate pool after MCP filter before warning
+shortlist_size: 20             # Top N candidates sent to LLM for evaluation
+phase2_good_match_target: 20   # Trigger Phase 2 broader search when good matches are below this target
+top_x: 10                      # Final candidates returned to user
+
+# --- System-owned universal dealbreakers ---
+# These apply to all jobs and are controlled by the system operator.
+universal_dealbreakers:
+  - id: "no_professional_experience"
+    rule: "Candidate has no professional work experience at all"
+    keyword_signals: []
+  - id: "completely_unrelated_field"
+    rule: "Candidate's entire background is in a completely unrelated field"
+    keyword_signals: []
+
+# --- Embedding cache ---
+embedding_cache_ttl_days: 7   # Days before a cached embedding is considered stale
+embedding_cache_path: "cache/embeddings.db"  # Path to SQLite cache file
+
+# --- Output ---
+results_dir: "results"         # Directory where Markdown result files are saved
+
+# --- Telemetry ---
+telemetry_log_path: "logs/telemetry.jsonl"
+feedback_log_path: "logs/feedback.jsonl"
+
+# --- OpenAI (default provider for embedding and LLM) ---
+embedding_provider: "openai"
+embedding_model: "text-embedding-3-small"
+embedding_price_per_million_tokens: 0.02   # USD, update as pricing changes
+
+llm_provider: "openai"
+llm_model: "gpt-4.1-mini"
+llm_input_price_per_million_tokens: 0.40   # USD
+llm_output_price_per_million_tokens: 1.60  # USD
+
+# --- Manatal MCP ---
+# Manatal secret URL is sourced from src/sa_candidate_finder/secrets.py
+
+# --- Resilience ---
+mcp_timeout_seconds: 10
+embedding_timeout_seconds: 15
+llm_timeout_seconds: 60
+max_retries: 2
+retry_backoff: "exponential"   # options: exponential, fixed

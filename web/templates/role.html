@@ -1,0 +1,689 @@
+{% extends "base.html" %}
+{% block title %}{{ role.name }} — SeamlessAssist Finder{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<nav style="display:flex;align-items:center;gap:6px;font-size:12px;color:#6b6560;margin-bottom:24px;">
+  <a href="/" style="color:#6b6560;text-decoration:none;"
+     onmouseover="this.style.color='#5D1C34'" onmouseout="this.style.color='#6b6560'">All Roles</a>
+  <span style="opacity:.5;">›</span>
+  <span style="color:#11100F;font-weight:600;">{{ role.name }}</span>
+</nav>
+
+<!-- Role header -->
+<div style="margin-bottom:28px;">
+  <h1 style="font-size:22px;font-weight:700;color:#11100F;letter-spacing:-.01em;margin-bottom:8px;">{{ role.name }}</h1>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;
+                 background:{{ role.status_hex }}18;color:{{ role.status_hex }};">
+      <span style="width:6px;height:6px;border-radius:50%;background:{{ role.status_hex }};flex-shrink:0;"></span>
+      {{ role.status }}
+    </span>
+    <span style="font-size:12px;color:#6b6560;">{{ role.num_jds }} JD{{ 's' if role.num_jds != 1 }}</span>
+  </div>
+  {% if role.job_ids %}
+  <div style="margin-top:10px;display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+    <span style="font-size:11px;color:#6b6560;padding-top:3px;">Grouped Job IDs:</span>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+      {% for jid in role.job_ids %}
+      <span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:#EFE9E1;color:#11100F;font-size:11px;font-weight:600;">{{ jid }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Role intelligence panel: hard filters + keywords + re-rank -->
+{% set rr = request.args.get('rerank') %}
+{% if rr %}
+<div style="margin-bottom:14px;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:600;
+            {% if rr == 'ok' or rr == 'running' %}background:rgba(137,148,129,.16);color:#2f4a34;border:1px solid rgba(137,148,129,.35);
+            {% else %}background:rgba(205,60,0,.08);color:#7a2d00;border:1px solid rgba(205,60,0,.22);{% endif %}">
+  {% if rr == 'running' %}
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div>Re-rank is running. Progress updates will appear automatically.</div>
+      <div style="height:8px;background:rgba(17,16,15,.10);border-radius:999px;overflow:hidden;">
+        <div id="rerank-progress-fill" style="height:100%;width:8%;background:#5D1C34;transition:width .35s ease;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;font-weight:600;color:#2f4a34;">
+        <span id="rerank-progress-label">Starting...</span>
+        <span id="rerank-progress-percent">8%</span>
+      </div>
+      <div id="rerank-progress-heartbeat" style="margin-top:4px;font-size:10px;color:#6b6560;">Connecting to live updates...</div>
+    </div>
+  {% elif rr == 'ok' %}
+    Re-rank completed. Results have been refreshed.
+  {% elif rr == 'overrides-cleared' %}
+    Session overrides cleared. Defaults are active again.
+  {% elif rr == 'no-job-id' %}
+    Re-rank failed: no anchor job ID found for this role.
+  {% elif rr == 'timeout' %}
+    Re-rank timed out. Try again with fewer keyword changes.
+  {% else %}
+    Re-rank failed. Check server logs for details.
+  {% endif %}
+</div>
+{% endif %}
+
+{% set rq = request.args.get('requirements') %}
+{% if rq %}
+<div style="margin-bottom:14px;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:600;
+            {% if rq == 'refreshed' %}background:rgba(137,148,129,.16);color:#2f4a34;border:1px solid rgba(137,148,129,.35);
+            {% else %}background:rgba(205,60,0,.08);color:#7a2d00;border:1px solid rgba(205,60,0,.22);{% endif %}">
+  {% if rq == 'refreshed' %}
+    Requirements refreshed from the latest Manatal job data. Candidate results were not reranked.
+  {% else %}
+    Could not refresh requirements from the latest job data right now.
+  {% endif %}
+</div>
+{% endif %}
+
+{% if role.has_results %}
+<div style="margin-bottom:28px;">
+
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:18px 20px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin-bottom:10px;">Default Filters and Keywords</p>
+
+    {% if role.requirements_stale %}
+    <div style="margin:0 0 12px 0;background:#fff7ec;border:1px solid rgba(166,125,68,.35);border-radius:10px;padding:10px 12px;font-size:12px;color:#6b4e22;line-height:1.45;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          Manatal job data was refreshed after candidates for this role were ranked. The keywords and job requirements shown below are older than the current job description in Manatal.
+        </div>
+        <form method="post" action="/role/{{ role.id }}/refresh-requirements" style="margin:0;flex-shrink:0;">
+          <button type="submit"
+                  style="padding:7px 12px;border:1px solid rgba(166,125,68,.35);border-radius:8px;background:#fff;color:#6b4e22;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;"
+                  onmouseover="this.style.background='#fffaf3'" onmouseout="this.style.background='#fff'">
+            Refresh Requirements
+          </button>
+        </form>
+      </div>
+    </div>
+    {% elif role.requirements_source == 'live' %}
+    <div style="margin:0 0 12px 0;background:#f5faf4;border:1px solid rgba(137,148,129,.35);border-radius:10px;padding:10px 12px;font-size:12px;color:#2f4a34;line-height:1.45;">
+      Showing requirements refreshed from the latest Manatal job data. Candidate rankings below are still from the last rerank.
+    </div>
+    {% endif %}
+
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin:0 0 8px 0;">LLM-Extracted Keywords (Default)</p>
+    <p style="font-size:11px;color:#6b6560;margin:0 0 10px 0;">These guide the initial keyword search. Click x to remove a keyword for this session.</p>
+    {% if role.llm_keywords %}
+    <div id="default-keywords-list" style="display:flex;flex-wrap:wrap;gap:6px;">
+      {% for kw in role.llm_keywords %}
+      <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;background:#EFE9E1;color:#11100F;font-size:11px;font-weight:500;">
+        {{ kw }}
+        <button type="button" onclick='removeDefaultKeyword({{ kw|tojson }}, this)'
+                style="width:14px;height:14px;border-radius:50%;border:none;background:rgba(17,16,15,.15);color:#11100F;font-size:9px;line-height:1;cursor:pointer;padding:0;"
+                onmouseover="this.style.background='rgba(93,28,52,.25)';this.style.color='#5D1C34'"
+                onmouseout="this.style.background='rgba(17,16,15,.15)';this.style.color='#11100F'"
+                title="Remove this keyword for this session">x</button>
+      </span>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="font-size:11px;color:#6b6560;margin:0;">None recorded for this run.</p>
+    {% endif %}
+
+    <form id="session-overrides-form" method="post" action="/role/{{ role.id }}/rerank" onsubmit="prepareOverridesForSubmit()">
+      <input type="hidden" name="keywords" id="keywords-input" value="{{ role.session_override_filters|join(', ') }}">
+      <input type="hidden" name="removed_keywords" id="removed-keywords-input" value="{{ role.session_removed_keywords|join(', ') }}">
+      <input type="hidden" name="disabled_hard_filters" id="disabled-hard-filters-input" value="{{ role.session_disabled_hard_filters|join(', ') }}">
+
+      <div style="border-top:1px solid #EFE9E1;margin-top:12px;padding-top:12px;">
+        <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin:0 0 8px 0;">Session Overrides</p>
+        <p style="font-size:11px;color:#6b6560;margin:0 0 10px 0;">Add keywords for this browser session.</p>
+        <div style="border:1px solid #CDBCAB;border-radius:10px;background:#FAF7F4;padding:10px;">
+          <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin:0 0 6px 0;">Active Session Overrides</p>
+          <div id="override-chips" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px;"></div>
+          <div style="display:flex;gap:8px;align-items:stretch;margin-top:8px;">
+            <input type="text" id="keyword-add-input" placeholder="Type a keyword to add and press Add"
+                   style="flex:1;padding:8px 12px;border:1px solid #CDBCAB;border-radius:8px;font-size:12px;color:#11100F;background:#fff;outline:none;"
+                   onfocus="this.style.borderColor='#5D1C34'" onblur="this.style.borderColor='#CDBCAB'"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();addOverrideFromInput();}">
+            <button type="button" onclick="addOverrideFromInput()"
+                    style="padding:8px 14px;background:#EFE9E1;color:#11100F;border:1px solid #CDBCAB;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+              Add
+            </button>
+          </div>
+        </div>
+        <div style="margin-top:10px;border:1px dashed #CDBCAB;border-radius:10px;background:#FAF7F4;padding:8px 10px;">
+          <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin:0 0 4px 0;">Session Updates</p>
+          <div id="session-updates-feed" style="display:flex;flex-direction:column;gap:4px;"></div>
+        </div>
+        <p style="margin-top:6px;font-size:10px;color:#6b6560;">Session-added keywords are used in step-1 keyword matching for this run.</p>
+      </div>
+
+      <div style="border-top:1px solid #EFE9E1;margin-top:12px;padding-top:12px;">
+        <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin:0 0 8px 0;">Job Requirements passed to LLM (Final Step)</p>
+        <p style="font-size:11px;color:#6b6560;margin:0 0 10px 0;">These requirements are enforced by the evaluator LLM in the final evaluation step before ranking is finalized.</p>
+        {% if role.hard_filters %}
+          <ul id="default-hard-filter-list" style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;">
+            {% for f in role.hard_filters %}
+            <li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#11100F;line-height:1.4;">
+              <span style="flex:1;">{{ f.rule }}</span>
+              {% if not f.universal %}
+              <button type="button" onclick='removeDefaultHardFilter({{ f.rule|tojson }}, this)'
+                      style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:none;background:rgba(17,16,15,.15);color:#11100F;font-size:11px;line-height:1;cursor:pointer;padding:0;"
+                      onmouseover="this.style.background='rgba(93,28,52,.25)';this.style.color='#5D1C34'"
+                      onmouseout="this.style.background='rgba(17,16,15,.15)';this.style.color='#11100F'"
+                      title="Disable this hard filter for this session">x</button>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p style="font-size:12px;color:#6b6560;">No hard filters recorded for this run.</p>
+        {% endif %}
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:stretch;margin-top:16px;padding-top:12px;border-top:1px solid #EFE9E1;">
+        <button type="submit"
+                style="padding:8px 16px;background:#5D1C34;color:#EFE9E1;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
+                onmouseover="this.style.background='#7a2545'" onmouseout="this.style.background='#5D1C34'">Re-rank</button>
+        <a href="/role/{{ role.id }}/clear-overrides"
+           style="padding:8px 12px;background:#EFE9E1;color:#11100F;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;">
+           Reset
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<!-- Stats row -->
+<div class="sa-cards-3" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:32px;">
+
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:18px 20px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Applied Candidates</p>
+    <p style="font-size:36px;font-weight:700;color:#11100F;margin-top:6px;line-height:1;">{{ role.total_candidates_in_pool or role.candidates_fmt }}</p>
+  </div>
+
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:18px 20px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Tier A Matches</p>
+    <p style="font-size:36px;font-weight:700;color:#A67D44;margin-top:6px;line-height:1;">{{ role.tier_a }}</p>
+  </div>
+
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:18px 20px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Tier A Rate</p>
+    <p style="font-size:36px;font-weight:700;color:#11100F;margin-top:6px;line-height:1;">
+      {% if role.candidates > 0 %}
+        {{ "%.1f"|format(role.tier_a / role.candidates * 100) }}
+      {% else %}
+        0.0
+      {% endif %}<span style="font-size:18px;font-weight:500;color:#6b6560;">%</span>
+    </p>
+  </div>
+
+</div>
+
+{% if candidates %}
+<div class="sa-cards-4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:14px 16px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Keyword Filtered</p>
+    <p style="font-size:24px;font-weight:700;color:#11100F;margin-top:4px;">{{ role.total_ranked_candidates or candidates|length }}</p>
+  </div>
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:14px 16px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">LLM Evaluated</p>
+    <p style="font-size:24px;font-weight:700;color:#11100F;margin-top:4px;">{{ role.llm_evaluated_candidates or 0 }}</p>
+  </div>
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:14px 16px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Tier A in Top Set</p>
+    <p style="font-size:24px;font-weight:700;color:#A67D44;margin-top:4px;">{{ role.tier_a }}</p>
+  </div>
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:14px 16px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Last Run (UTC)</p>
+    <p style="font-size:13px;font-weight:600;color:#11100F;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ role.last_ran_at or "-" }}</p>
+  </div>
+</div>
+
+<div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;overflow:hidden;">
+  <div style="padding:16px 24px;border-bottom:1px solid #CDBCAB;display:flex;align-items:center;justify-content:space-between;">
+    <h2 style="font-size:13px;font-weight:700;color:#11100F;letter-spacing:.02em;">Top candidates for {{ role.name }}</h2>
+    <span style="font-size:12px;color:#6b6560;">showing {{ candidates|length }} ranked candidates</span>
+  </div>
+  <div style="padding:10px 24px;border-bottom:1px solid #EFE9E1;background:#FAF7F4;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+    <span style="font-size:11px;color:#6b6560;">Review source:</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#11100F;">
+      <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(93,28,52,.10);color:#5D1C34;font-weight:700;">LLM Reviewed</span>
+      reviewed by AI and tiered
+    </span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#11100F;">
+      <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(205,60,0,.09);color:#b04000;font-weight:700;">Disqualified</span>
+      failed hard filter rules
+    </span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#11100F;">
+      <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(17,16,15,.08);color:#11100F;font-weight:700;">Not Evaluated by LLM</span>
+      keyword score below threshold
+    </span>
+  </div>
+  <div class="sa-table-wrap"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <thead>
+      <tr style="border-bottom:1px solid #CDBCAB;">
+        <th style="text-align:left;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Candidate</th>
+        <th style="text-align:left;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Current Role</th>
+        <th style="text-align:center;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Tier</th>
+        <th style="text-align:left;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Manatal Status</th>
+        <th style="text-align:center;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Review</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in candidates %}
+      <tr style="border-bottom:1px solid #EFE9E1;cursor:pointer;" onclick="window.location='/role/{{ role.id }}/candidate/{{ c.id }}'" onmouseover="this.style.background='#FAF7F4'" onmouseout="this.style.background=''">
+        <td style="padding:10px 16px;">
+          <div style="font-weight:600;color:#11100F;">{{ c.name or "Unknown" }}</div>
+          <div style="font-size:11px;color:#6b6560;">{{ c.location or "-" }}</div>
+        </td>
+        <td style="padding:10px 16px;color:#11100F;">
+          <div style="font-weight:600;">{{ c.current_position or "-" }}</div>
+          <div style="font-size:11px;color:#6b6560;">{{ c.current_company or "-" }}</div>
+        </td>
+        <td style="padding:10px 16px;text-align:center;">
+          {% set tier = (c.tier or "")|upper %}
+          {% if c.llm_reviewed and not c.llm_qualified %}
+            {% set tier = "D" %}
+          {% endif %}
+          {% if tier == "A" %}
+            <span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:0 8px;border-radius:7px;background:rgba(166,125,68,.12);color:#A67D44;font-weight:700;">A</span>
+          {% elif tier == "B" %}
+            <span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:0 8px;border-radius:7px;background:rgba(137,148,129,.14);color:#899481;font-weight:700;">B</span>
+          {% elif tier == "C" %}
+            <span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:0 8px;border-radius:7px;background:rgba(205,188,171,.24);color:#6b6560;font-weight:700;">C</span>
+          {% elif tier == "D" %}
+            <span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:0 8px;border-radius:7px;background:rgba(205,60,0,.12);color:#b04000;font-weight:700;">D</span>
+          {% else %}
+            <span style="display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:0 8px;border-radius:7px;background:rgba(17,16,15,.08);color:#11100F;font-weight:700;">-</span>
+          {% endif %}
+        </td>
+        <td style="padding:10px 16px;">
+          <span style="font-size:12px;color:#6b6560;">{{ c.manatal_stage or "—" }}</span>
+        </td>
+        <td style="padding:10px 16px;text-align:center;">
+          {% if c.llm_reviewed and c.llm_qualified %}
+            <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(93,28,52,.10);color:#5D1C34;font-size:11px;font-weight:700;">LLM Reviewed</span>
+          {% elif c.not_reviewed_reason %}
+            <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(180,120,0,.12);color:#7a5000;font-size:11px;font-weight:700;cursor:help;"
+                  title="{{ c.not_reviewed_reason }}">Not Reviewed</span>
+          {% elif c.llm_reviewed and not c.llm_qualified %}
+            <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(205,60,0,.09);color:#b04000;font-size:11px;font-weight:700;cursor:help;"
+                  title="{{ c.disqualify_reason or 'Failed hard filter' }}">Disqualified</span>
+          {% else %}
+            <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(17,16,15,.08);color:#11100F;font-size:11px;font-weight:700;">Not Evaluated by LLM</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% else %}
+<div style="background:#fff;border:1px dashed #CDBCAB;border-radius:14px;padding:64px 40px;text-align:center;">
+  <h3 style="font-size:16px;font-weight:700;color:#11100F;">No candidates ranked yet</h3>
+  <p style="font-size:13px;color:#6b6560;margin-top:6px;max-width:420px;margin-left:auto;margin-right:auto;">
+    No candidates ranked yet for this role.
+  </p>
+  <form method="post" action="/role/{{ role.id }}/rerank" style="margin-top:16px;display:inline-flex;flex-direction:column;align-items:center;gap:8px;">
+    <button type="submit"
+            style="padding:10px 16px;background:#5D1C34;color:#EFE9E1;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
+            onmouseover="this.style.background='#7a2545'" onmouseout="this.style.background='#5D1C34'">
+      Rank Candidates
+    </button>
+    <span style="font-size:11px;color:#6b6560;">This run can take a few minutes. Progress will update automatically.</span>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var overrideKeywords = {{ role.session_override_filters|tojson }};
+var removedKeywords = {{ role.session_removed_keywords|tojson }};
+var disabledHardFilters = {{ role.session_disabled_hard_filters|tojson }};
+
+function normalizeKw(v) {
+  return (v || '').trim().replace(/\s+/g, ' ');
+}
+
+function syncKeywordsInput() {
+  var keywordsInput = document.getElementById('keywords-input');
+  var removedKeywordsInput = document.getElementById('removed-keywords-input');
+  var disabledFiltersInput = document.getElementById('disabled-hard-filters-input');
+  if (!keywordsInput || !removedKeywordsInput || !disabledFiltersInput) {
+    return;
+  }
+  keywordsInput.value = overrideKeywords.join(', ');
+  removedKeywordsInput.value = removedKeywords.join(', ');
+  disabledFiltersInput.value = disabledHardFilters.join(', ');
+}
+
+function renderSessionUpdates() {
+  var host = document.getElementById('session-updates-feed');
+  if (!host) {
+    return;
+  }
+  host.innerHTML = '';
+  if (!overrideKeywords.length && !removedKeywords.length && !disabledHardFilters.length) {
+    var empty = document.createElement('span');
+    empty.style.fontSize = '11px';
+    empty.style.color = '#6b6560';
+    empty.textContent = 'No updates yet';
+    host.appendChild(empty);
+    return;
+  }
+
+  if (overrideKeywords.length) {
+    var addedSummary = document.createElement('span');
+    addedSummary.style.fontSize = '11px';
+    addedSummary.style.color = '#11100F';
+    addedSummary.textContent = 'Final added keywords: ' + overrideKeywords.join(', ');
+    host.appendChild(addedSummary);
+  }
+
+  if (removedKeywords.length) {
+    var removedSummary = document.createElement('span');
+    removedSummary.style.fontSize = '11px';
+    removedSummary.style.color = '#11100F';
+    removedSummary.textContent = 'Default keywords removed: ' + removedKeywords.join(', ');
+    host.appendChild(removedSummary);
+  }
+
+  if (disabledHardFilters.length) {
+    var filtersSummary = document.createElement('span');
+    filtersSummary.style.fontSize = '11px';
+    filtersSummary.style.color = '#11100F';
+    filtersSummary.textContent = 'LLM filters disabled: ' + disabledHardFilters.length;
+    host.appendChild(filtersSummary);
+  }
+}
+
+function renderOverrideChips() {
+  var host = document.getElementById('override-chips');
+  if (!host) {
+    return;
+  }
+  host.innerHTML = '';
+  if (!overrideKeywords.length && !removedKeywords.length && !disabledHardFilters.length) {
+    var empty = document.createElement('span');
+    empty.style.fontSize = '11px';
+    empty.style.color = '#6b6560';
+    empty.textContent = 'No overrides yet';
+    host.appendChild(empty);
+    syncKeywordsInput();
+    return;
+  }
+
+  overrideKeywords.forEach(function(kw, idx) {
+    var chip = document.createElement('span');
+    chip.style.display = 'inline-flex';
+    chip.style.alignItems = 'center';
+    chip.style.gap = '6px';
+    chip.style.padding = '4px 9px';
+    chip.style.borderRadius = '999px';
+    chip.style.background = 'rgba(93,28,52,.10)';
+    chip.style.color = '#5D1C34';
+    chip.style.fontSize = '11px';
+    chip.style.fontWeight = '600';
+    chip.textContent = kw;
+
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'x';
+    remove.setAttribute('aria-label', 'Remove ' + kw);
+    remove.style.width = '14px';
+    remove.style.height = '14px';
+    remove.style.borderRadius = '50%';
+    remove.style.border = 'none';
+    remove.style.background = 'rgba(17,16,15,.2)';
+    remove.style.color = '#11100F';
+    remove.style.cursor = 'pointer';
+    remove.style.fontSize = '10px';
+    remove.style.lineHeight = '1';
+    remove.style.padding = '0';
+    remove.onclick = function() {
+      overrideKeywords.splice(idx, 1);
+      renderOverrideChips();
+      renderSessionUpdates();
+    };
+
+    chip.appendChild(remove);
+    host.appendChild(chip);
+  });
+
+  removedKeywords.forEach(function(kw, idx) {
+    var chip = document.createElement('span');
+    chip.style.display = 'inline-flex';
+    chip.style.alignItems = 'center';
+    chip.style.gap = '6px';
+    chip.style.padding = '4px 9px';
+    chip.style.borderRadius = '999px';
+    chip.style.background = 'rgba(180,120,0,.12)';
+    chip.style.color = '#7a5000';
+    chip.style.fontSize = '11px';
+    chip.style.fontWeight = '600';
+    chip.textContent = 'Removed default: ' + kw;
+
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'x';
+    remove.setAttribute('aria-label', 'Undo removed default keyword ' + kw);
+    remove.style.width = '14px';
+    remove.style.height = '14px';
+    remove.style.borderRadius = '50%';
+    remove.style.border = 'none';
+    remove.style.background = 'rgba(122,80,0,.2)';
+    remove.style.color = '#7a5000';
+    remove.style.cursor = 'pointer';
+    remove.style.fontSize = '10px';
+    remove.style.lineHeight = '1';
+    remove.style.padding = '0';
+    remove.onclick = function() {
+      removedKeywords.splice(idx, 1);
+      renderOverrideChips();
+      renderSessionUpdates();
+    };
+
+    chip.appendChild(remove);
+    host.appendChild(chip);
+  });
+
+  disabledHardFilters.forEach(function(rule, idx) {
+    var chip = document.createElement('span');
+    chip.style.display = 'inline-flex';
+    chip.style.alignItems = 'center';
+    chip.style.gap = '6px';
+    chip.style.padding = '4px 9px';
+    chip.style.borderRadius = '999px';
+    chip.style.background = 'rgba(205,60,0,.09)';
+    chip.style.color = '#b04000';
+    chip.style.fontSize = '11px';
+    chip.style.fontWeight = '600';
+    chip.textContent = 'Disable filter: ' + rule;
+
+    var remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'x';
+    remove.setAttribute('aria-label', 'Undo hard filter disable ' + rule);
+    remove.style.width = '14px';
+    remove.style.height = '14px';
+    remove.style.borderRadius = '50%';
+    remove.style.border = 'none';
+    remove.style.background = 'rgba(176,64,0,.18)';
+    remove.style.color = '#7a2d00';
+    remove.style.cursor = 'pointer';
+    remove.style.fontSize = '10px';
+    remove.style.lineHeight = '1';
+    remove.style.padding = '0';
+    remove.onclick = function() {
+      disabledHardFilters.splice(idx, 1);
+      renderOverrideChips();
+      renderSessionUpdates();
+    };
+
+    chip.appendChild(remove);
+    host.appendChild(chip);
+  });
+
+  syncKeywordsInput();
+}
+
+function addOverrideFromInput() {
+  var input = document.getElementById('keyword-add-input');
+  var raw = normalizeKw(input.value);
+  if (!raw) {
+    return;
+  }
+  var exists = overrideKeywords.some(function(k) { return k.toLowerCase() === raw.toLowerCase(); });
+  if (!exists) {
+    overrideKeywords.push(raw);
+    renderOverrideChips();
+    renderSessionUpdates();
+  }
+  input.value = '';
+  input.focus();
+}
+
+function removeDefaultKeyword(kw, buttonEl) {
+  var token = normalizeKw(kw);
+  if (!token) {
+    return;
+  }
+  var exists = removedKeywords.some(function(k) { return k.toLowerCase() === token.toLowerCase(); });
+  if (!exists) {
+    removedKeywords.push(token);
+  }
+  if (buttonEl && buttonEl.parentElement) {
+    buttonEl.parentElement.remove();
+  }
+  renderOverrideChips();
+  renderSessionUpdates();
+}
+
+function removeDefaultHardFilter(rule, buttonEl) {
+  var token = normalizeKw(rule);
+  if (!token) {
+    return;
+  }
+  var exists = disabledHardFilters.some(function(r) { return r.toLowerCase() === token.toLowerCase(); });
+  if (!exists) {
+    disabledHardFilters.push(token);
+  }
+  var row = buttonEl ? buttonEl.closest('li') : null;
+  if (row) {
+    row.remove();
+  }
+  renderOverrideChips();
+  renderSessionUpdates();
+}
+
+function prepareOverridesForSubmit() {
+  addOverrideFromInput();
+  syncKeywordsInput();
+}
+
+function startRerankProgressPolling() {
+  var params = new URLSearchParams(window.location.search);
+  var state = params.get('rerank') || '';
+  var jobId = params.get('job') || '';
+  if (state !== 'running' || !jobId) {
+    return;
+  }
+
+  var fill = document.getElementById('rerank-progress-fill');
+  var label = document.getElementById('rerank-progress-label');
+  var pct = document.getElementById('rerank-progress-percent');
+  var heartbeat = document.getElementById('rerank-progress-heartbeat');
+  if (!fill || !label || !pct) {
+    return;
+  }
+
+  var done = false;
+  var heartbeatTimer = null;
+  var lastServerAt = Date.now();
+  var lastMessage = 'Starting...';
+
+  function stopHeartbeat() {
+    if (heartbeatTimer) {
+      window.clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  }
+
+  function renderHeartbeat() {
+    if (!heartbeat) {
+      return;
+    }
+    var ageSec = Math.max(0, Math.floor((Date.now() - lastServerAt) / 1000));
+    if (ageSec === 0) {
+      heartbeat.textContent = 'Live updates connected';
+      return;
+    }
+    heartbeat.textContent = 'Last server update ' + ageSec + 's ago';
+    if (ageSec >= 15 && !done) {
+      label.textContent = (lastMessage || 'Running rerank...') + ' (still running)';
+    }
+  }
+
+  heartbeatTimer = window.setInterval(renderHeartbeat, 1000);
+
+  function setProgress(progress, message) {
+    var value = Math.max(0, Math.min(100, Number(progress) || 0));
+    fill.style.width = value + '%';
+    pct.textContent = value + '%';
+    lastServerAt = Date.now();
+    lastMessage = message || 'Running rerank...';
+    label.textContent = lastMessage;
+    renderHeartbeat();
+  }
+
+  function pollOnce() {
+    if (done) {
+      return;
+    }
+    fetch('/role/{{ role.id }}/rerank-status/' + encodeURIComponent(jobId), { cache: 'no-store' })
+      .then(function(res) {
+        if (res.status === 404) {
+          return { ok: false, error: 'job-not-found' };
+        }
+        return res.json();
+      })
+      .then(function(data) {
+        if (!data || !data.ok) {
+          if (data && data.error === 'job-not-found') {
+            done = true;
+            window.location.href = '/role/{{ role.id }}?rerank=failed';
+            return;
+          }
+          throw new Error('status error');
+        }
+        setProgress(data.progress, data.message);
+        if (data.status === 'completed') {
+          done = true;
+          stopHeartbeat();
+          window.location.href = '/role/{{ role.id }}?rerank=ok';
+          return;
+        }
+        if (data.status === 'failed') {
+          done = true;
+          stopHeartbeat();
+          window.location.href = '/role/{{ role.id }}?rerank=' + (data.done_state || 'failed');
+          return;
+        }
+        window.setTimeout(pollOnce, 1500);
+      })
+      .catch(function() {
+        window.setTimeout(pollOnce, 2000);
+      });
+  }
+
+  pollOnce();
+}
+
+if (document.getElementById('override-chips')) {
+  renderOverrideChips();
+  renderSessionUpdates();
+}
+startRerankProgressPolling();
+window.saSetChatContext('{{ role.id }}', null);
+</script>
+{% endblock %}

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}SeamlessAssist Finder{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Open Sans', 'Arial', 'sans-serif'],
+          },
+          colors: {
+            charcoal:  '#11100F',
+            burgundy:  '#5D1C34',
+            gold:      '#A67D44',
+            sage:      '#899481',
+            taupe:     '#CDBCAB',
+            cream:     '#EFE9E1',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Open Sans', Arial, sans-serif; }
+    .nav-label {
+      padding: 0 12px 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #CDBCAB;
+      opacity: .7;
+    }
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #CDBCAB;
+      transition: background .15s, color .15s;
+      text-decoration: none;
+    }
+    .nav-link:hover { background: rgba(239,233,225,.08); color: #EFE9E1; }
+    .nav-link.active { background: #5D1C34; color: #EFE9E1; }
+
+    /* ── Mobile responsive ───────────────────────────────────────── */
+    #sa-topbar { display: none; }
+    @media (max-width: 768px) {
+      body { overflow: auto !important; display: block !important; height: auto !important; }
+      #sa-sidebar {
+        position: fixed !important; top: 0; left: 0; bottom: 0;
+        z-index: 200; transform: translateX(-100%);
+        transition: transform .25s ease; overflow-y: auto;
+      }
+      #sa-sidebar.mobile-open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,.25); }
+      #sa-overlay {
+        display: none; position: fixed; inset: 0;
+        background: rgba(0,0,0,.45); z-index: 199;
+      }
+      #sa-overlay.mobile-open { display: block; }
+      #sa-topbar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 16px; background: #11100F;
+        border-bottom: 1px solid rgba(205,188,171,.12);
+        position: sticky; top: 0; z-index: 50;
+      }
+      #sa-main { overflow-y: visible !important; }
+      #sa-main > div { padding: 20px 16px 40px !important; max-width: 100% !important; }
+      .sa-cards-4 { grid-template-columns: repeat(2, 1fr) !important; }
+      .sa-cards-3 { grid-template-columns: repeat(2, 1fr) !important; }
+      .sa-two-col { grid-template-columns: 1fr !important; }
+      .sa-score-grid { grid-template-columns: repeat(3, 1fr) !important; }
+      .sa-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .sa-candidate-header { flex-direction: column !important; }
+      .sa-candidate-header > a[href] { align-self: flex-start !important; margin-top: 12px !important; }
+    }
+  </style>
+</head>
+<body class="h-full flex overflow-hidden" style="background:#EFE9E1; color:#11100F;">
+
+  <!-- ── Mobile overlay + top bar ────────────────────────────────── -->
+  <div id="sa-overlay" onclick="toggleMobileSidebar()"></div>
+  <div id="sa-topbar">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:30px;height:30px;border-radius:7px;background:#5D1C34;display:flex;align-items:center;justify-content:center;">
+        <span style="font-size:11px;font-weight:700;color:#EFE9E1;letter-spacing:.04em;">SA</span>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:#EFE9E1;">SeamlessAssist</span>
+    </div>
+    <button type="button" onclick="toggleMobileSidebar()"
+            style="border:none;background:rgba(255,255,255,.1);color:#EFE9E1;border-radius:7px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;"
+            aria-label="Open navigation">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ── Left navigation ─────────────────────────────────────────── -->
+  <aside id="sa-sidebar" style="width:248px; min-width:248px; background:#11100F; border-right:1px solid rgba(205,188,171,.12);" class="flex flex-col flex-shrink-0">
+
+    <!-- Logo / brand -->
+    <div style="padding:20px 20px 18px; border-bottom:1px solid rgba(205,188,171,.12);">
+      <div class="flex items-center gap-3">
+        <div style="width:36px;height:36px;border-radius:8px;background:#5D1C34;display:flex;align-items:center;justify-content:center;">
+          <span style="font-size:13px;font-weight:700;color:#EFE9E1;letter-spacing:.04em;">SA</span>
+        </div>
+        <div>
+          <p style="font-size:13px;font-weight:700;color:#EFE9E1;line-height:1.2;">SeamlessAssist</p>
+          <p style="font-size:11px;color:#CDBCAB;margin-top:1px;">Candidate Finder</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nav sections -->
+    <nav style="flex:1;padding:16px 10px;overflow-y:auto;display:flex;flex-direction:column;gap:20px;">
+
+      <div>
+        <p class="nav-label">Overview</p>
+        <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">
+          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+          </svg>
+          All Roles
+        </a>
+      </div>
+
+      <div>
+        <p class="nav-label">Active Roles</p>
+        {% for r in nav_roles %}
+        <a href="/role/{{ r.id }}" class="nav-link {% if request.path == '/role/' ~ r.id %}active{% endif %}">
+          <!-- status dot using palette -->
+          <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;
+            background:{%
+              if r.status_color == 'gold' %}#A67D44{%
+              elif r.status_color == 'green' %}#899481{%
+              elif r.status_color == 'burgundy' %}#5D1C34{%
+              elif r.status_color == 'taupe' %}#CDBCAB{%
+              else %}#CDBCAB{% endif %};"></span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.name }}</span>
+        </a>
+        {% endfor %}
+      </div>
+
+    </nav>
+
+    <!-- Footer -->
+    <div style="padding:14px 20px;border-top:1px solid rgba(205,188,171,.12);font-size:11px;color:#CDBCAB;opacity:.6;">
+      v0.1 &middot; Internal Testing
+    </div>
+  </aside>
+
+  <!-- ── Main content ─────────────────────────────────────────────── -->
+  <main id="sa-main" style="flex:1;overflow-y:auto;background:#EFE9E1;">
+    <div style="max-width:960px;margin:0 auto;padding:40px 40px 60px;">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <div id="sa-chat-root" style="position:fixed;right:20px;bottom:20px;z-index:1000;">
+    <button id="sa-chat-toggle" type="button"
+            style="width:56px;height:56px;border-radius:50%;border:none;background:#5D1C34;color:#EFE9E1;box-shadow:0 8px 22px rgba(17,16,15,.25);cursor:pointer;display:flex;align-items:center;justify-content:center;"
+            title="Open chat"
+            aria-label="Open chat">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
+      </svg>
+    </button>
+
+    <div id="sa-chat-panel" style="display:none;position:absolute;right:0;bottom:68px;width:340px;max-width:calc(100vw - 24px);background:#fff;border:1px solid #CDBCAB;border-radius:14px;overflow:hidden;box-shadow:0 14px 34px rgba(17,16,15,.18);">
+      <div style="padding:12px 14px;border-bottom:1px solid #EFE9E1;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <p style="font-size:13px;font-weight:700;color:#11100F;line-height:1.2;">SeamlessAssist Chat</p>
+          <p style="font-size:11px;color:#6b6560;margin-top:2px;">Q/A guidance only</p>
+        </div>
+        <button id="sa-chat-close" type="button" style="border:none;background:transparent;color:#6b6560;font-size:18px;line-height:1;cursor:pointer;" aria-label="Close chat">&times;</button>
+      </div>
+
+      <div id="sa-chat-messages" style="padding:12px;max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;background:#FAF7F4;">
+        <div style="align-self:flex-start;max-width:85%;padding:9px 10px;border-radius:10px;background:#EFE9E1;color:#11100F;font-size:12px;line-height:1.45;">
+          Ask questions about candidate status, keywords, filters, and settings.
+        </div>
+      </div>
+
+      <form id="sa-chat-form" style="padding:10px;border-top:1px solid #EFE9E1;display:flex;gap:8px;">
+        <input id="sa-chat-input" type="text" placeholder="Ask a question..."
+               style="flex:1;padding:9px 10px;border:1px solid #CDBCAB;border-radius:8px;font-size:12px;color:#11100F;background:#fff;outline:none;" />
+        <button id="sa-chat-send" type="submit"
+                style="padding:9px 12px;background:#5D1C34;color:#EFE9E1;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+          Send
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    window.saChatContext = { roleId: null, candidateId: null };
+    window.saSetChatContext = function (roleId, candidateId) {
+      window.saChatContext.roleId = roleId || null;
+      window.saChatContext.candidateId = candidateId || null;
+    };
+
+    (function () {
+      var history = [];
+      var toggleBtn = document.getElementById('sa-chat-toggle');
+      var panel = document.getElementById('sa-chat-panel');
+      var closeBtn = document.getElementById('sa-chat-close');
+      var form = document.getElementById('sa-chat-form');
+      var input = document.getElementById('sa-chat-input');
+      var sendBtn = document.getElementById('sa-chat-send');
+      var messages = document.getElementById('sa-chat-messages');
+
+      function appendMessage(role, text) {
+        var bubble = document.createElement('div');
+        bubble.style.alignSelf = role === 'user' ? 'flex-end' : 'flex-start';
+        bubble.style.maxWidth = '85%';
+        bubble.style.padding = '9px 10px';
+        bubble.style.borderRadius = '10px';
+        bubble.style.fontSize = '12px';
+        bubble.style.lineHeight = '1.45';
+        bubble.style.whiteSpace = 'pre-wrap';
+        if (role === 'user') {
+          bubble.style.background = '#5D1C34';
+          bubble.style.color = '#EFE9E1';
+        } else {
+          bubble.style.background = '#EFE9E1';
+          bubble.style.color = '#11100F';
+        }
+        bubble.textContent = text;
+        messages.appendChild(bubble);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      toggleBtn.addEventListener('click', function () {
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        if (panel.style.display === 'block') input.focus();
+      });
+      closeBtn.addEventListener('click', function () {
+        panel.style.display = 'none';
+      });
+
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var text = (input.value || '').trim();
+        if (!text) return;
+
+        appendMessage('user', text);
+        history.push({ role: 'user', content: text });
+        input.value = '';
+        sendBtn.disabled = true;
+        sendBtn.textContent = '...';
+
+        try {
+          var res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              role_id: window.saChatContext.roleId,
+              candidate_id: window.saChatContext.candidateId,
+              history: history,
+              message: text
+            })
+          });
+          var data = await res.json();
+          var reply = data.reply || data.error || 'No response.';
+          appendMessage('assistant', reply);
+          history.push({ role: 'assistant', content: reply });
+        } catch (err) {
+          appendMessage('assistant', 'Chat is temporarily unavailable.');
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.textContent = 'Send';
+          input.focus();
+        }
+      });
+    })();
+  </script>
+<script>
+  function toggleMobileSidebar() {
+    document.getElementById('sa-sidebar').classList.toggle('mobile-open');
+    document.getElementById('sa-overlay').classList.toggle('mobile-open');
+  }
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

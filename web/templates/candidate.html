@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name or "Candidate" }} — {{ role.name }}{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<nav style="display:flex;align-items:center;gap:6px;font-size:12px;color:#6b6560;margin-bottom:24px;">
+  <a href="/" style="color:#6b6560;text-decoration:none;"
+     onmouseover="this.style.color='#5D1C34'" onmouseout="this.style.color='#6b6560'">All Roles</a>
+  <span style="opacity:.5;">›</span>
+  <a href="/role/{{ role.id }}" style="color:#6b6560;text-decoration:none;"
+     onmouseover="this.style.color='#5D1C34'" onmouseout="this.style.color='#6b6560'">{{ role.name }}</a>
+  <span style="opacity:.5;">›</span>
+  <span style="color:#11100F;font-weight:600;">{{ c.name or "Candidate" }}</span>
+</nav>
+
+<!-- Candidate header -->
+<div class="sa-candidate-header" style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;padding:24px 28px;margin-bottom:24px;display:flex;align-items:flex-start;justify-content:space-between;gap:24px;">
+  <div style="flex:1;">
+    <h1 style="font-size:20px;font-weight:700;color:#11100F;margin-bottom:4px;">{{ c.name or "Unknown Candidate" }}</h1>
+    <p style="font-size:13px;color:#6b6560;margin-bottom:12px;">
+      {{ c.current_position or "—" }}{% if c.current_company %} &middot; {{ c.current_company }}{% endif %}
+      {% if c.location %} &middot; {{ c.location }}{% endif %}
+    </p>
+    <!-- Tier badge and status -->
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      {% set tier = (c.tier or "")|upper %}
+      {% if c.llm_reviewed and not c.llm_qualified %}
+        {% set tier = "D" %}
+      {% endif %}
+      {% if tier == "A" %}
+        <span style="padding:4px 14px;border-radius:8px;background:rgba(166,125,68,.12);color:#A67D44;font-weight:700;font-size:13px;">Tier A</span>
+        <span style="font-size:12px;color:#A67D44;font-weight:600;">Immediate outreach — schedule screening within 24 hrs</span>
+      {% elif tier == "B" %}
+        <span style="padding:4px 14px;border-radius:8px;background:rgba(137,148,129,.14);color:#899481;font-weight:700;font-size:13px;">Tier B</span>
+        <span style="font-size:12px;color:#899481;font-weight:600;">Strong pool — include in shortlist, outreach within 72 hrs</span>
+      {% elif tier == "C" %}
+        <span style="padding:4px 14px;border-radius:8px;background:rgba(205,188,171,.24);color:#6b6560;font-weight:700;font-size:13px;">Tier C</span>
+        <span style="font-size:12px;color:#6b6560;font-weight:600;">Conditional — review manually before deciding to outreach</span>
+      {% elif c.not_reviewed_reason %}
+        <span style="padding:4px 14px;border-radius:8px;background:rgba(180,120,0,.12);color:#7a5000;font-weight:700;font-size:13px;">Not Reviewed</span>
+        <span style="font-size:12px;color:#7a5000;font-weight:600;">AI evaluation incomplete — review resume manually</span>
+      {% elif c.llm_reviewed and not c.llm_qualified %}
+        <span style="padding:4px 14px;border-radius:8px;background:rgba(205,60,0,.09);color:#b04000;font-weight:700;font-size:13px;">Disqualified</span>
+        <span style="font-size:12px;color:#b04000;font-weight:600;">Failed a hard filter — do not advance</span>
+      {% else %}
+        <span style="padding:4px 14px;border-radius:8px;background:rgba(17,16,15,.08);color:#11100F;font-weight:700;font-size:13px;">Not Evaluated by LLM</span>
+        <span style="font-size:12px;color:#6b6560;font-weight:600;">Keyword score below AI evaluation threshold — review resume manually</span>
+      {% endif %}
+    </div>
+  </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+     <a href="/resume-fresh/{{ c.id }}" target="_blank" rel="noopener noreferrer"
+       style="flex-shrink:0;padding:10px 20px;background:#5D1C34;color:#EFE9E1;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;"
+       onmouseover="this.style.background='#7a2545'" onmouseout="this.style.background='#5D1C34'">Open Resume &rarr;</a>
+     <a href="/resume-download/{{ c.id }}" target="_blank" rel="noopener noreferrer"
+       style="flex-shrink:0;padding:10px 20px;background:#EFE9E1;color:#5D1C34;border:1px solid #CDBCAB;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;"
+       onmouseover="this.style.background='#f7f1ea'" onmouseout="this.style.background='#EFE9E1'">Download Resume</a>
+    </div>
+</div>
+
+<!-- Evaluator rationale (only if LLM qualified) -->
+{% if c.llm_qualified %}
+<div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;padding:22px 28px;margin-bottom:24px;">
+  <!-- Rationale -->
+  {% if c.rationale %}
+  <div>
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin-bottom:8px;">Evaluator Rationale</p>
+    <p style="font-size:13px;color:#11100F;line-height:1.6;">{{ c.rationale }}</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Strengths + Risks -->
+<div class="sa-two-col" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;padding:20px 24px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#899481;margin-bottom:12px;">Matched Strengths</p>
+    {% if c.strengths %}
+      <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;">
+        {% for s in c.strengths %}
+        <li style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#11100F;line-height:1.4;">
+          <span style="margin-top:4px;flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#899481;"></span>{{ s }}
+        </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p style="font-size:12px;color:#6b6560;">None recorded.</p>
+    {% endif %}
+  </div>
+  <div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;padding:20px 24px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#b04000;margin-bottom:12px;">Risks / Gaps</p>
+    {% if c.risks %}
+      <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;">
+        {% for r in c.risks %}
+        <li style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#11100F;line-height:1.4;">
+          <span style="margin-top:4px;flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#b04000;"></span>{{ r }}
+        </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p style="font-size:12px;color:#6b6560;">None recorded.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% elif c.not_reviewed_reason %}
+<!-- Not Reviewed explanation -->
+<div style="background:#fff;border:1px solid rgba(180,120,0,.30);border-radius:14px;padding:22px 28px;margin-bottom:24px;">
+  <h2 style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7a5000;margin-bottom:12px;">Why This Candidate Was Not Reviewed</h2>
+  <p style="font-size:13px;color:#11100F;line-height:1.6;">{{ c.not_reviewed_reason }}</p>
+  <p style="font-size:12px;color:#6b6560;margin-top:10px;line-height:1.5;">This candidate was included in the AI evaluation batch, but the evaluator could not produce a result. Their resume is available below — review it manually and re-rank the role to retry AI evaluation.</p>
+</div>
+
+{% elif c.llm_reviewed and not c.llm_qualified %}
+<!-- Disqualification explanation -->
+<div style="background:#fff;border:1px solid rgba(205,60,0,.25);border-radius:14px;padding:22px 28px;margin-bottom:24px;">
+  <h2 style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#b04000;margin-bottom:12px;">Disqualification Reason</h2>
+  <p style="font-size:13px;color:#11100F;line-height:1.6;">{{ c.disqualify_reason or c.rationale or "No reason was recorded for this candidate. Re-rank the role to get a detailed explanation." }}</p>
+  {% if hard_filters %}
+  <div style="margin-top:16px;border-top:1px solid rgba(205,60,0,.15);padding-top:14px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin-bottom:10px;">Hard Filters Active for This Role</p>
+    <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;">
+      {% for f in hard_filters %}
+      <li style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#11100F;line-height:1.4;">
+        <span style="margin-top:4px;flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#b04000;"></span>{{ f.rule }}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+
+{% else %}
+<!-- Not evaluated by LLM — below keyword threshold -->
+<div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;padding:22px 28px;margin-bottom:24px;">
+  <h2 style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin-bottom:10px;">Why This Candidate Was Not Evaluated by LLM</h2>
+
+  {% set kw = c.keyword_score %}
+  {% set threshold = llm_eval_policy.good_match_threshold if llm_eval_policy else 6.0 %}
+  <p style="font-size:13px;color:#11100F;line-height:1.6;">
+    This candidate's keyword similarity score
+    {% if kw is not none %}
+      (<strong>{{ kw }}/10</strong>)
+    {% endif %}
+    was below the AI evaluation threshold of <strong>{{ threshold }}/10</strong>.
+    Only candidates scoring at or above this threshold are sent for AI analysis.
+  </p>
+
+  {% if c.not_reviewed_reason %}
+  <p style="font-size:13px;color:#6b6560;margin-top:8px;line-height:1.6;">
+    Additionally, {{ c.not_reviewed_reason }}
+  </p>
+  {% endif %}
+
+  {% if llm_eval_policy %}
+  <p style="font-size:12px;color:#6b6560;margin-top:10px;border-top:1px solid #EFE9E1;padding-top:10px;">
+    {% if llm_eval_policy.mode == "quality_gate" %}
+      LLM evaluation was applied to all candidates with keyword score &gt;= {{ llm_eval_policy.good_match_threshold }} (selected: {{ llm_eval_policy.selected_eval_count }}).
+    {% else %}
+      LLM evaluation was applied to the selected candidate pool ({{ llm_eval_policy.selected_eval_count }} candidates).
+    {% endif %}
+    Re-rank the role to retry evaluation.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Keyword match breakdown (shown for all candidates) -->
+{% if final_keyword_set %}
+{% set matched = c.matched_keywords or [] %}
+{% set matched_norm = [] %}
+{% for mk in matched %}
+  {% set _ = matched_norm.append((mk|string)|trim|lower) %}
+{% endfor %}
+{% set ns = namespace(matched_count=0) %}
+<div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;padding:22px 28px;margin-bottom:24px;">
+  <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;">
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;margin:0;">Keyword Match</p>
+    {% for kw in final_keyword_set %}
+      {% if ((kw|string)|trim|lower) in matched_norm %}
+        {% set ns.matched_count = ns.matched_count + 1 %}
+      {% endif %}
+    {% endfor %}
+    <span style="font-size:12px;color:#6b6560;">{{ ns.matched_count }} / {{ final_keyword_set | length }} matched</span>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;">
+    {% for kw in final_keyword_set %}
+      {% if ((kw|string)|trim|lower) in matched_norm %}
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;background:rgba(137,148,129,.15);color:#3d4d38;font-size:12px;font-weight:600;">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="flex-shrink:0;"><path d="M1.5 5L3.8 7.5L8.5 2.5" stroke="#3d8a3d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          {{ kw }}
+        </span>
+      {% else %}
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;background:rgba(205,60,0,.07);color:#7a3000;font-size:12px;font-weight:600;">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="flex-shrink:0;"><path d="M2.5 2.5L7.5 7.5M7.5 2.5L2.5 7.5" stroke="#b04000" stroke-width="1.6" stroke-linecap="round"/></svg>
+          {{ kw }}
+        </span>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% if not matched %}
+  <p style="font-size:12px;color:#6b6560;margin-top:12px;">No keywords matched — this candidate may have been included via a secondary search phase.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Resume embed -->
+<div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;overflow:hidden;margin-bottom:24px;">
+  <div style="padding:14px 24px;border-bottom:1px solid #CDBCAB;display:flex;align-items:center;justify-content:space-between;">
+    <h2 style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Resume</h2>
+   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;">
+    <a href="/resume-fresh/{{ c.id }}" target="_blank" rel="noopener noreferrer"
+      style="font-size:12px;font-weight:600;color:#5D1C34;text-decoration:none;"
+      onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Open in new tab &rarr;</a>
+    <a href="/resume-download/{{ c.id }}" target="_blank" rel="noopener noreferrer"
+      style="font-size:12px;font-weight:600;color:#5D1C34;text-decoration:none;"
+      onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Download</a>
+   </div>
+  </div>
+  {% set resume_url_l = (c.resume_url or '')|lower %}
+  {% set non_pdf_resume = '.docx' in resume_url_l or '.doc' in resume_url_l or '.rtf' in resume_url_l or '.odt' in resume_url_l or '.txt' in resume_url_l %}
+  {% if non_pdf_resume %}
+  <div style="padding:24px;">
+    <p style="font-size:13px;color:#6b6560;line-height:1.6;">
+      This resume is stored as a non-PDF document. Use "Open in new tab" to view or download it.
+    </p>
+  </div>
+  {% else %}
+  <object
+    class="sa-resume-viewer"
+    data="/resume-fresh/{{ c.id }}"
+    type="application/pdf"
+    id="resume-iframe"
+    style="width:100%;height:820px;border:none;display:block;">
+    <embed
+      class="sa-resume-viewer"
+      src="/resume-fresh/{{ c.id }}"
+      type="application/pdf"
+      style="width:100%;height:820px;border:none;display:block;" />
+    <div id="resume-fallback" style="padding:32px;text-align:center;">
+      <p style="font-size:13px;color:#6b6560;">Resume could not be embedded — the file may be unavailable or the link has expired.</p>
+      <a href="/resume-fresh/{{ c.id }}" target="_blank" rel="noopener noreferrer" style="color:#5D1C34;font-weight:600;display:inline-block;margin-top:8px;">Open resume directly &rarr;</a>
+    </div>
+  </object>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.saSetChatContext('{{ role.id }}', '{{ c.id }}');
+</script>
+<style>
+@media (max-width: 768px) {
+  .sa-resume-viewer {
+    height: 68vh !important;
+    min-height: 420px;
+  }
+}
+</style>
+{% endblock %}
