@@ -3,3 +3,6 @@
 
 [variables]
 NIXPACKS_PYTHON_PACKAGE_MANAGER = "pip"
+
+[start]
+cmd = "python web/app.py"
