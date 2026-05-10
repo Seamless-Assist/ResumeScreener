@@ -763,8 +763,7 @@ def role_download_excel(role_id: str):
     wb.save(buf)
     buf.seek(0)
 
-    role_name = (role_result.get("role_name") or role_id).replace(" ", "_")
-    filename = f"{role_name}_Tier_AB_Candidates.xlsx"
+    filename = f"{role_id}_Tier_AB_Candidates.xlsx"
     return Response(
         buf.read(),
         headers={
