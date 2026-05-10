@@ -8,3 +8,4 @@ numpy>=1.26
 pydantic>=2.7
 flask>=3.0
 gunicorn>=21.0
+openpyxl>=3.1

@@ -554,6 +554,7 @@ def role_detail(role_id: str):
     role["llm_evaluated_candidates"] = int(role_result.get("llm_evaluated_candidates", 0))
     role["total_ranked_candidates"] = int(role_result.get("total_ranked_candidates", 0))
     role["total_candidates_in_pool"] = int(role_result.get("total_candidates_in_pool", 0))
+    role["tier_b"] = sum(1 for c in candidates if str(c.get("tier", "")).upper() == "B")
     role["last_ran_at"] = role_result.get("ran_at", "")
     last_ran_at = _parse_iso_utc(role["last_ran_at"])
     live_requirements = _get_role_session_requirements(role_id) or {}
@@ -608,6 +609,169 @@ def role_refresh_requirements(role_id: str):
 
     _set_role_session_requirements(role_id, snapshot)
     return redirect(url_for("role_detail", role_id=role_id, requirements="refreshed"))
+
+
+@app.route("/role/<role_id>/refresh-and-rerank", methods=["POST"])
+def role_refresh_and_rerank(role_id: str):
+    roles = _build_roles()
+    role = next((r for r in roles if r["id"] == role_id), None)
+    if not role:
+        abort(404)
+
+    role_result = _load_role_results(role_id) or {}
+
+    # Refresh live requirements from Manatal and store in session for display
+    snapshot = _refresh_live_requirements(role, role_result)
+    if snapshot:
+        _set_role_session_requirements(role_id, snapshot)
+
+    anchor_job_id = _resolve_anchor_job_id(role, role_result)
+    if not anchor_job_id:
+        return redirect(url_for("role_detail", role_id=role_id, rerank="no-job-id"))
+
+    for key, msg in [
+        (OPENAI_API_KEY, "OPENAI_API_KEY is not configured. Set OPENAI_API_KEY in the environment."),
+        (MANATAL_API_KEY, "MANATAL_API_KEY is not configured. Set MANATAL_API_KEY in the environment."),
+        (MANATAL_BASE_URL, "MANATAL_BASE_URL is not configured. Set MANATAL_BASE_URL in the environment."),
+    ]:
+        if not key:
+            return redirect(url_for("role_detail", role_id=role_id, rerank="failed", message=msg))
+
+    # Carry forward any existing session overrides
+    if "keywords" in request.form:
+        _set_role_session_overrides(role_id, _parse_comma_terms(request.form.get("keywords") or ""))
+    if "removed_keywords" in request.form:
+        _set_role_session_removed_keywords(role_id, _parse_comma_terms(request.form.get("removed_keywords") or ""))
+    dynamic_rule_norm = {_norm_rule_text(r) for r in _dynamic_hard_filter_rules(role_result)}
+    if "disabled_hard_filters" in request.form:
+        disabled = [
+            r for r in _parse_comma_terms(request.form.get("disabled_hard_filters") or "")
+            if _norm_rule_text(r) in dynamic_rule_norm
+        ]
+        _set_role_session_disabled_hard_filters(role_id, disabled)
+
+    session_override_filters = _get_role_session_overrides(role_id)
+    session_removed_keywords = _get_role_session_removed_keywords(role_id)
+    session_disabled_hard_filters = [
+        r for r in _get_role_session_disabled_hard_filters(role_id)
+        if _norm_rule_text(r) in dynamic_rule_norm
+    ]
+    _set_role_session_disabled_hard_filters(role_id, session_disabled_hard_filters)
+
+    cmd = [
+        sys.executable,
+        str(ROOT / "src" / "sa_candidate_finder" / "cli.py"),
+        "agentic-search",
+        "--job-id",
+        str(anchor_job_id),
+        "--rerank-fast",
+    ]
+    keyword_directives: list[str] = []
+    if session_override_filters:
+        keyword_directives.extend(session_override_filters)
+    if session_removed_keywords:
+        keyword_directives.extend([f"-{kw}" for kw in session_removed_keywords])
+    if keyword_directives:
+        cmd.extend(["--keywords", ",".join(keyword_directives)])
+    if session_disabled_hard_filters:
+        cmd.extend(["--disable-hard-filter-rules", "||".join(session_disabled_hard_filters)])
+
+    session_id = _get_session_id(create=True) or uuid.uuid4().hex
+    session_results_dir = _session_results_dir(session_id)
+    session_results_dir.mkdir(parents=True, exist_ok=True)
+
+    job_id = _create_rerank_job(role_id, session_id)
+    threading.Thread(
+        target=_run_rerank_job,
+        args=(job_id, role_id, cmd, str(session_results_dir)),
+        daemon=True,
+    ).start()
+    return redirect(url_for("role_detail", role_id=role_id, rerank="running", job=job_id))
+
+
+@app.route("/role/<role_id>/download-excel")
+def role_download_excel(role_id: str):
+    import io
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    role_result = _load_role_results(role_id)
+    if not role_result:
+        abort(404)
+
+    all_candidates = role_result.get("candidates", [])
+    _tier_order = {"A": 0, "B": 1}
+    tier_ab = sorted(
+        [c for c in all_candidates if str(c.get("tier", "")).upper() in ("A", "B")],
+        key=lambda c: (
+            _tier_order.get(str(c.get("tier", "")).upper(), 2),
+            -(c.get("fit_score") or 0),
+        ),
+    )
+    if not tier_ab:
+        abort(404)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tier A & B Candidates"
+
+    headers = [
+        "Rank", "Name", "Tier", "Fit Score", "Current Position",
+        "Current Company", "Location", "Manatal Stage",
+        "Matched Keywords", "Strengths", "Risks", "Rationale",
+    ]
+    hdr_font = Font(bold=True, color="FFFFFF", size=10)
+    hdr_fill = PatternFill(start_color="5D1C34", end_color="5D1C34", fill_type="solid")
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[1].height = 28
+
+    tier_a_fill = PatternFill(start_color="FFF8EC", end_color="FFF8EC", fill_type="solid")
+    tier_b_fill = PatternFill(start_color="F4F7F3", end_color="F4F7F3", fill_type="solid")
+
+    for row_idx, c in enumerate(tier_ab, 2):
+        tier = str(c.get("tier") or "").upper()
+        row_fill = tier_a_fill if tier == "A" else tier_b_fill
+        row_data = [
+            c.get("rank") or (row_idx - 1),
+            c.get("name") or "",
+            tier,
+            c.get("fit_score"),
+            c.get("current_position") or "",
+            c.get("current_company") or "",
+            c.get("location") or "",
+            c.get("manatal_stage") or "",
+            ", ".join(c.get("matched_keywords") or []),
+            "; ".join(c.get("strengths") or []),
+            "; ".join(c.get("risks") or []),
+            c.get("rationale") or "",
+        ]
+        for col_idx, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.fill = row_fill
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    col_widths = [7, 24, 6, 9, 28, 28, 20, 18, 38, 48, 48, 70]
+    for col_idx, width in enumerate(col_widths, 1):
+        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    role_name = (role_result.get("role_name") or role_id).replace(" ", "_")
+    filename = f"{role_name}_Tier_AB_Candidates.xlsx"
+    return Response(
+        buf.read(),
+        headers={
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @app.route("/role/<role_id>/rerank", methods=["GET", "POST"])

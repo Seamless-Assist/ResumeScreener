@@ -181,10 +181,14 @@
         {% endif %}
       </div>
 
-      <div style="display:flex;gap:8px;align-items:stretch;margin-top:16px;padding-top:12px;border-top:1px solid #EFE9E1;">
+      <div style="display:flex;gap:8px;align-items:stretch;margin-top:16px;padding-top:12px;border-top:1px solid #EFE9E1;flex-wrap:wrap;">
         <button type="submit"
                 style="padding:8px 16px;background:#5D1C34;color:#EFE9E1;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
                 onmouseover="this.style.background='#7a2545'" onmouseout="this.style.background='#5D1C34'">Re-rank</button>
+        <button type="submit" formaction="/role/{{ role.id }}/refresh-and-rerank"
+                style="padding:8px 16px;background:#A67D44;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
+                onmouseover="this.style.background='#8a6435'" onmouseout="this.style.background='#A67D44'"
+                title="Fetch the latest job description from Manatal, then re-rank candidates">Refresh &amp; Re-rank</button>
         <a href="/role/{{ role.id }}/clear-overrides"
            style="padding:8px 12px;background:#EFE9E1;color:#11100F;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;">
            Reset
@@ -242,9 +246,25 @@
 </div>
 
 <div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;overflow:hidden;">
-  <div style="padding:16px 24px;border-bottom:1px solid #CDBCAB;display:flex;align-items:center;justify-content:space-between;">
+  <div style="padding:16px 24px;border-bottom:1px solid #CDBCAB;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
     <h2 style="font-size:13px;font-weight:700;color:#11100F;letter-spacing:.02em;">Top candidates for {{ role.name }}</h2>
-    <span style="font-size:12px;color:#6b6560;">showing {{ candidates|length }} ranked candidates</span>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <span style="font-size:12px;color:#6b6560;">showing {{ candidates|length }} ranked candidates</span>
+      {% set tier_ab_count = role.tier_a + role.tier_b %}
+      {% if tier_ab_count > 0 %}
+      <a href="/role/{{ role.id }}/download-excel"
+         style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#EFE9E1;border:1px solid #CDBCAB;border-radius:8px;font-size:11px;font-weight:700;color:#11100F;text-decoration:none;white-space:nowrap;"
+         onmouseover="this.style.background='#e0d8ce'" onmouseout="this.style.background='#EFE9E1'"
+         title="Download Tier A &amp; B candidates as Excel">
+        &#8659; Download Excel <span style="padding:1px 6px;background:#A67D44;color:#fff;border-radius:999px;font-size:10px;">{{ tier_ab_count }}</span>
+      </a>
+      {% else %}
+      <span style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#F5F2EF;border:1px solid #E0D8CE;border-radius:8px;font-size:11px;font-weight:700;color:#CDBCAB;cursor:not-allowed;white-space:nowrap;"
+            title="No Tier A or B candidates to download">
+        &#8659; Download Excel
+      </span>
+      {% endif %}
+    </div>
   </div>
   <div style="padding:10px 24px;border-bottom:1px solid #EFE9E1;background:#FAF7F4;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
     <span style="font-size:11px;color:#6b6560;">Review source:</span>
@@ -327,11 +347,19 @@
     No candidates ranked yet for this role.
   </p>
   <form method="post" action="/role/{{ role.id }}/rerank" style="margin-top:16px;display:inline-flex;flex-direction:column;align-items:center;gap:8px;">
-    <button type="submit"
-            style="padding:10px 16px;background:#5D1C34;color:#EFE9E1;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
-            onmouseover="this.style.background='#7a2545'" onmouseout="this.style.background='#5D1C34'">
-      Rank Candidates
-    </button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+      <button type="submit"
+              style="padding:10px 16px;background:#5D1C34;color:#EFE9E1;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
+              onmouseover="this.style.background='#7a2545'" onmouseout="this.style.background='#5D1C34'">
+        Rank Candidates
+      </button>
+      <button type="submit" formaction="/role/{{ role.id }}/refresh-and-rerank"
+              style="padding:10px 16px;background:#A67D44;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
+              onmouseover="this.style.background='#8a6435'" onmouseout="this.style.background='#A67D44'"
+              title="Fetch the latest job description from Manatal, then rank candidates">
+        Refresh &amp; Re-rank
+      </button>
+    </div>
     <span style="font-size:11px;color:#6b6560;">This run can take a few minutes. Progress will update automatically.</span>
   </form>
 </div>
