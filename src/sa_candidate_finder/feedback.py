@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import typer
 
@@ -74,7 +75,7 @@ def run_feedback(jd_path: Path) -> None:
         typer.echo("\nNo feedback recorded.")
 
 
-def _find_last_run(jd_path: Path, cfg) -> dict | None:
+def _find_last_run(jd_path: Path, cfg) -> Optional[dict]:
     log_path = Path(cfg.telemetry_log_path)
     if not log_path.exists():
         return None
@@ -92,7 +93,7 @@ def _find_last_run(jd_path: Path, cfg) -> dict | None:
     return last
 
 
-def _find_results_file(jd_path: Path, run_id: str, cfg) -> Path | None:
+def _find_results_file(jd_path: Path, run_id: str, cfg) -> Optional[Path]:
     results_dir = Path(cfg.results_dir)
     if not results_dir.exists():
         return None

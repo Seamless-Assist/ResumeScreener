@@ -5,7 +5,7 @@ import httpx
 import time
 from io import BytesIO
 from urllib.parse import parse_qs, urlparse
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional
 from sa_candidate_finder.models import CandidateMeta
 
 
@@ -20,7 +20,7 @@ def _resume_pdf_cache_path(candidate_id) -> str:
     return os.path.join(_RESUME_PDF_CACHE_DIR, f"candidate_{candidate_id}.pdf")
 
 
-def load_cached_resume_pdf(candidate_id) -> bytes | None:
+def load_cached_resume_pdf(candidate_id) -> Optional[bytes]:
     """Return locally cached PDF bytes or None if not cached."""
     p = _resume_pdf_cache_path(candidate_id)
     try:
@@ -128,6 +128,9 @@ def fetch_candidates_by_job(api_token: str, job_id: str, page_size: int = 100) -
     Fetch candidates who have applied to a specific job from Manatal.
     """
     excluded_statuses = {
+        "goodfit interview",
+        "goodfit interview sent",
+        "goodfit interview approved",
         "goodfit interview failed",
         "final interview failed",
         "added to pool",
@@ -138,7 +141,12 @@ def fetch_candidates_by_job(api_token: str, job_id: str, page_size: int = 100) -
         return " ".join(str(value or "").strip().lower().split())
 
     def _is_excluded_stage(value: Any) -> bool:
-        return _normalize_stage_name(value) in excluded_statuses
+        normalized = _normalize_stage_name(value)
+        if not normalized:
+            return False
+        if normalized in excluded_statuses:
+            return True
+        return any(normalized.startswith(prefix) for prefix in ("goodfit interview",))
 
     filtered_status_total = 0
     filtered_status_breakdown: dict[str, int] = {}
@@ -272,7 +280,7 @@ def fetch_candidates_by_job(api_token: str, job_id: str, page_size: int = 100) -
         except Exception as e:
             print(f"[Cache] Could not write cache for {candidate_id}: {e}")
 
-    def fetch_candidate_by_id(candidate_id: int, manatal_stage: str = "") -> CandidateMeta | None:
+    def fetch_candidate_by_id(candidate_id: int, manatal_stage: str = "") -> Optional[CandidateMeta]:
         path = cache_path(candidate_id)
         applied_job_ids = [job_id] if job_id else []
         # Try cache first

@@ -72,7 +72,7 @@ _AVAILABILITY_BONUS = {
 }
 
 
-def _build_system_prompt(dealbreakers: list[dict] | None) -> str:
+def _build_system_prompt(dealbreakers: Optional[list[dict]]) -> str:
     """Build the system prompt, injecting any dealbreaker rules at the top."""
     if not dealbreakers:
         dealbreaker_section = ""
@@ -147,7 +147,7 @@ def evaluate_candidates(
     soft_criteria: list[SoftCriteria],
     cfg: Config,
     telemetry: RunTelemetry,
-    dealbreakers: list[dict] | None = None,
+    dealbreakers: Optional[list[dict]] = None,
 ) -> list[CandidateResult]:
     client = OpenAI(api_key=cfg.openai_api_key, timeout=cfg.llm_timeout_seconds)
     system_prompt = _build_system_prompt(dealbreakers)

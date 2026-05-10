@@ -24,8 +24,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your application code
 COPY . .
 
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash app \
+    && chown -R app:app /app
+USER app
+
 # Expose port 5050 (your web dashboard port)
 EXPOSE 5050
 
-# Start the Flask web application
-CMD ["python", "web/app.py"]
+# Start the Flask web application with Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "4", "--threads", "2", "wsgi:app"]

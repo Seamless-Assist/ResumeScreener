@@ -12,6 +12,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import urllib.parse as _urlparse
 import urllib.request as _urlrequest
@@ -21,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from sa_candidate_finder.manatal_jobs import fetch_all_jobs
-from sa_candidate_finder.secrets import MANATAL_API_KEY, OPENAI_API_KEY
+from sa_candidate_finder.secrets import MANATAL_API_KEY, OPENAI_API_KEY, MANATAL_BASE_URL
 from openai import OpenAI as _OpenAI
 
 _openai_client = _OpenAI(api_key=OPENAI_API_KEY)
@@ -61,7 +62,7 @@ def _role_id_from_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", _normalize_role(name)).strip("_")
 
 
-def _get_session_id(create: bool = False) -> str | None:
+def _get_session_id(create: bool = False) -> Optional[str]:
     if not has_request_context():
         return None
     sid = str(session.get("sa_session_id", "")).strip()
@@ -75,12 +76,12 @@ def _session_results_dir(session_id: str) -> Path:
     return SESSION_RESULTS_ROOT / session_id
 
 
-def _role_results_path(role_id: str, session_id: str | None = None) -> Path:
+def _role_results_path(role_id: str, session_id: Optional[str] = None) -> Path:
     base = _session_results_dir(session_id) if session_id else RESULTS_DIR
     return base / f"role_{role_id}.json"
 
 
-def _load_role_results(role_id: str) -> dict | None:
+def _load_role_results(role_id: str) -> Optional[dict]:
     sid = _get_session_id(create=False)
     if sid:
         session_path = _role_results_path(role_id, sid)
@@ -99,7 +100,7 @@ def _load_role_results(role_id: str) -> dict | None:
         return None
 
 
-def _jobs_cache_fetched_at() -> datetime | None:
+def _jobs_cache_fetched_at() -> Optional[datetime]:
     path = ROOT / "cache" / "jobs" / "all_jobs.json"
     if not path.exists():
         return None
@@ -116,7 +117,7 @@ def _jobs_cache_fetched_at() -> datetime | None:
         return None
 
 
-def _parse_iso_utc(value: str) -> datetime | None:
+def _parse_iso_utc(value: str) -> Optional[datetime]:
     raw = str(value or "").strip()
     if not raw:
         return None
@@ -219,7 +220,7 @@ def _set_role_session_disabled_hard_filters(role_id: str, disabled_filters: list
     session["role_disabled_hard_filters"] = all_disabled
 
 
-def _get_role_session_requirements(role_id: str) -> dict | None:
+def _get_role_session_requirements(role_id: str) -> Optional[dict]:
     all_requirements = session.get("role_live_requirements", {})
     if not isinstance(all_requirements, dict):
         return None
@@ -229,7 +230,7 @@ def _get_role_session_requirements(role_id: str) -> dict | None:
     return snapshot
 
 
-def _set_role_session_requirements(role_id: str, snapshot: dict | None) -> None:
+def _set_role_session_requirements(role_id: str, snapshot: Optional[dict]) -> None:
     all_requirements = session.get("role_live_requirements", {})
     if not isinstance(all_requirements, dict):
         all_requirements = {}
@@ -240,7 +241,7 @@ def _set_role_session_requirements(role_id: str, snapshot: dict | None) -> None:
     session["role_live_requirements"] = all_requirements
 
 
-def _resolve_anchor_job_id(role: dict, role_result: dict | None) -> str | None:
+def _resolve_anchor_job_id(role: dict, role_result: Optional[dict]) -> Optional[str]:
     role_result = role_result or {}
     anchor_job_id = role_result.get("anchor_job_id")
     if not anchor_job_id:
@@ -252,7 +253,7 @@ def _resolve_anchor_job_id(role: dict, role_result: dict | None) -> str | None:
     return str(anchor_job_id) if anchor_job_id else None
 
 
-def _refresh_live_requirements(role: dict, role_result: dict | None) -> dict | None:
+def _refresh_live_requirements(role: dict, role_result: Optional[dict]) -> Optional[dict]:
     from sa_candidate_finder.config import load_config
     from sa_candidate_finder.pipeline.extractor import extract_constraints
 
@@ -276,7 +277,7 @@ def _refresh_live_requirements(role: dict, role_result: dict | None) -> dict | N
     }
 
 
-def _infer_status(jobs: list[dict], role_result: dict | None) -> str:
+def _infer_status(jobs: list[dict], role_result: Optional[dict]) -> str:
     if any(j.get("status") == "on_hold" for j in jobs):
         return "On hold"
     if role_result and role_result.get("top_candidates"):
@@ -365,6 +366,9 @@ def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_d
     try:
         env = os.environ.copy()
         env["SA_RESULTS_DIR"] = session_results_dir
+        src_path = str(ROOT / "src")
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = src_path if not existing_pythonpath else f"{src_path}{os.pathsep}{existing_pythonpath}"
         proc = subprocess.Popen(
             cmd,
             cwd=str(ROOT),
@@ -518,6 +522,16 @@ def refresh_roles():
         return redirect(url_for("index", refreshed="error"))
 
 
+@app.route("/health")
+def health_check():
+    """Health check endpoint for monitoring."""
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "1.0.0"
+    })
+
+
 @app.route("/role/<role_id>")
 def role_detail(role_id: str):
     roles = _build_roles()
@@ -610,6 +624,34 @@ def role_rerank(role_id: str):
     anchor_job_id = _resolve_anchor_job_id(role, role_result)
     if not anchor_job_id:
         return redirect(url_for("role_detail", role_id=role_id, rerank="no-job-id"))
+
+    if not OPENAI_API_KEY:
+        return redirect(
+            url_for(
+                "role_detail",
+                role_id=role_id,
+                rerank="failed",
+                message="OPENAI_API_KEY is not configured. Set OPENAI_API_KEY in the environment.",
+            )
+        )
+    if not MANATAL_API_KEY:
+        return redirect(
+            url_for(
+                "role_detail",
+                role_id=role_id,
+                rerank="failed",
+                message="MANATAL_API_KEY is not configured. Set MANATAL_API_KEY in the environment.",
+            )
+        )
+    if not MANATAL_BASE_URL:
+        return redirect(
+            url_for(
+                "role_detail",
+                role_id=role_id,
+                rerank="failed",
+                message="MANATAL_BASE_URL is not configured. Set MANATAL_BASE_URL in the environment.",
+            )
+        )
 
     if "keywords" in request.form:
         session_terms = _parse_comma_terms(request.form.get("keywords") or "")
@@ -855,7 +897,7 @@ def _pdf_inline_response(pdf_bytes: bytes, *, max_age: int) -> Response:
     return Response(chunk, status=206, headers=headers)
 
 
-def _serve_pdf_inline_try(url: str) -> Response | None:
+def _serve_pdf_inline_try(url: str) -> Optional[Response]:
     """Try to fetch and serve PDF for a signed URL; return None when URL is invalid/expired/not a PDF."""
     try:
         req = _urlrequest.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -1126,4 +1168,5 @@ def api_chat():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5050)
+    # For development only - production uses Gunicorn
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5050)))

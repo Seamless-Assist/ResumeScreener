@@ -4,6 +4,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from openai import OpenAI
@@ -100,7 +101,7 @@ def _init_db(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def _get_cache(conn: sqlite3.Connection, candidate_id: str, ttl: timedelta) -> np.ndarray | None:
+def _get_cache(conn: sqlite3.Connection, candidate_id: str, ttl: timedelta) -> Optional[np.ndarray]:
     row = conn.execute(
         "SELECT vector, created_at FROM embeddings WHERE candidate_id = ?",
         (candidate_id,),

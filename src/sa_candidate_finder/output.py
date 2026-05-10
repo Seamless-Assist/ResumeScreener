@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from sa_candidate_finder.config import Config
 from sa_candidate_finder.models import CandidateResult, HardConstraint
@@ -13,7 +14,7 @@ def write_results(
     run_id: str,
     hard_constraints: list[HardConstraint],
     cfg: Config,
-    evaluated_count: int | None = None,
+    evaluated_count: Optional[int] = None,
 ) -> Path:
     results_dir = Path(cfg.results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)

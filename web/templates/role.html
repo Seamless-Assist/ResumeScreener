@@ -62,6 +62,10 @@
     Re-rank timed out. Try again with fewer keyword changes.
   {% else %}
     Re-rank failed. Check server logs for details.
+    {% set rr_message = request.args.get('message') %}
+    {% if rr_message %}
+      <div style="margin-top:6px;font-size:12px;color:#11100F;white-space:pre-wrap;">{{ rr_message }}</div>
+    {% endif %}
   {% endif %}
 </div>
 {% endif %}
@@ -666,7 +670,8 @@ function startRerankProgressPolling() {
         if (data.status === 'failed') {
           done = true;
           stopHeartbeat();
-          window.location.href = '/role/{{ role.id }}?rerank=' + (data.done_state || 'failed');
+          window.location.href = '/role/{{ role.id }}?rerank=' + (data.done_state || 'failed') +
+            '&message=' + encodeURIComponent(data.message || 'Re-rank failed.');
           return;
         }
         window.setTimeout(pollOnce, 1500);

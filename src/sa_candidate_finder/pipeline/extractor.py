@@ -5,7 +5,7 @@ import json
 import os
 import re
 import time
-from typing import Any
+from typing import Any, Optional
 
 from openai import OpenAI
 
@@ -134,7 +134,7 @@ def _keyword_cache_path(jd_text: str) -> str:
     return os.path.join(cache_dir, f"jd_{jd_hash}.json")
 
 
-def _load_cached_extraction(jd_text: str) -> dict | None:
+def _load_cached_extraction(jd_text: str) -> Optional[dict]:
     """Return cached keywords and dealbreakers, or None if not cached."""
     path = _keyword_cache_path(jd_text)
     if not os.path.exists(path):
@@ -299,7 +299,7 @@ def _heuristic_keywords_from_jd(jd_text: str, max_keywords: int) -> list[str]:
 def extract_constraints(
     jd_text: str,
     cfg: Config,
-    telemetry: RunTelemetry | None = None,
+    telemetry: Optional[RunTelemetry] = None,
 ) -> dict[str, Any]:
     cached = _load_cached_extraction(jd_text)
 

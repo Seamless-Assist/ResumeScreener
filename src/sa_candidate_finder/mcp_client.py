@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from sa_candidate_finder.models import CandidateResult, CandidateMeta
-from typing import List
+from typing import Any, List, Optional
 
 
 def _keyword_matches(keyword: str, haystack: str) -> bool:
@@ -18,8 +18,8 @@ def search_candidates(
     candidates: List[CandidateMeta],
     keywords: List[str],
     cfg: Config,
-    dealbreakers: List[dict] | None = None,
-    required_keywords: List[str] | None = None,
+    dealbreakers: Optional[List[dict]] = None,
+    required_keywords: Optional[List[str]] = None,
 ) -> List[CandidateResult]:
     """
     Call the MCP candidate search tool to score and rank candidates by fit to keywords.
@@ -184,7 +184,7 @@ def _parse_sse_jsonrpc(raw_text: str) -> dict[str, Any]:
     current_data_lines: list[str] = []
     in_data_event = False
 
-    def _try_decode_event(data_lines: list[str]) -> dict[str, Any] | None:
+    def _try_decode_event(data_lines: list[str]) -> Optional[dict[str, Any]]:
         if not data_lines:
             return None
         payload = "\n".join(data_lines).strip()
@@ -198,7 +198,7 @@ def _parse_sse_jsonrpc(raw_text: str) -> dict[str, Any]:
             return obj
         return None
 
-    def _decode_first_json_dict(text: str) -> dict[str, Any] | None:
+    def _decode_first_json_dict(text: str) -> Optional[dict[str, Any]]:
         decoder = json.JSONDecoder()
         for i, ch in enumerate(text):
             if ch != "{":

@@ -1,9 +1,8 @@
 # Nixpacks configuration for Coolify
-# Bypasses setuptools compilation errors by forcing pip installation
+# Production deployment with Gunicorn
 
 [variables]
 NIXPACKS_PYTHON_PACKAGE_MANAGER = "pip"
-NIXPACKS_START_CMD = "python web/app.py"
 
 [start]
-cmd = "python web/app.py"
+cmd = "gunicorn --bind 0.0.0.0:$PORT --workers 4 --threads 2 wsgi:app"
