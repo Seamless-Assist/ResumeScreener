@@ -16,7 +16,6 @@ dist/
 # Local/runtime data
 cache/
 logs/
-results/
 
 # Local config and secrets
 config.yaml
