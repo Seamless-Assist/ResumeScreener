@@ -600,11 +600,23 @@ def role_detail(role_id: str):
     role["requirements_stale"] = bool(
         latest_requirements_at and jobs_refreshed_at and jobs_refreshed_at > latest_requirements_at
     )
-    role["hard_filters"] = [
+    live_hard_filters = [
         f for f in (requirements_payload.get("hard_filters", []) or [])
         if isinstance(f, dict) and not bool(f.get("universal"))
     ]
-    role["llm_keywords"] = requirements_payload.get("llm_keywords", [])
+    # If a live refresh returned no JD-specific filters, fall back to the
+    # results-file filters so a failed or sparse LLM extraction doesn't wipe
+    # requirements that the full re-rank successfully extracted.
+    if not live_hard_filters and role["requirements_source"] == "live":
+        live_hard_filters = [
+            f for f in (role_result.get("hard_filters", []) or [])
+            if isinstance(f, dict) and not bool(f.get("universal"))
+        ]
+    role["hard_filters"] = live_hard_filters
+    live_keywords = requirements_payload.get("llm_keywords", [])
+    if not live_keywords and role["requirements_source"] == "live":
+        live_keywords = role_result.get("llm_keywords", [])
+    role["llm_keywords"] = live_keywords
     role["user_keywords"] = role_result.get("user_keywords", [])
     role["final_keyword_set"] = role_result.get("final_keyword_set", [])
     role["session_override_filters"] = _get_role_session_overrides(role_id)
