@@ -241,6 +241,29 @@ def invalidate_stage_snapshot(role_id: str) -> None:
         print(f"[SyncStages] Could not invalidate snapshot for role {role_id}: {e}", flush=True)
 
 
+def update_stage_snapshot_entry(role_id: str, candidate_id: str, stage_name: str) -> None:
+    """Update a single candidate's stage in the role snapshot without clearing other entries.
+
+    If no snapshot exists yet, creates one with just this entry so the candidate is
+    filtered out immediately on the next page load without requiring a full Sync Stages.
+    """
+    os.makedirs(_STAGE_SNAPSHOT_DIR, exist_ok=True)
+    path = os.path.join(_STAGE_SNAPSHOT_DIR, f"role_{role_id}.json")
+    try:
+        snap: dict = {}
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                snap = json.load(f)
+        stages: dict = snap.get('stages', {})
+        stages[str(candidate_id)] = str(stage_name)
+        snap['stages'] = stages
+        snap['fetched_at'] = snap.get('fetched_at', time.time())
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(snap, f)
+    except Exception as e:
+        print(f"[SyncStages] Could not update snapshot entry for role {role_id}: {e}", flush=True)
+
+
 def fetch_candidates_by_job(api_token: str, job_id: str, page_size: int = 100) -> List[CandidateMeta]:
     """
     Fetch candidates who have applied to a specific job from Manatal.

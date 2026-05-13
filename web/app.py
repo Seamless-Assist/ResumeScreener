@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from sa_candidate_finder.manatal_jobs import fetch_all_jobs
-from sa_candidate_finder.manatal_candidates import is_excluded_stage, load_role_stage_snapshot, sync_role_stages, invalidate_stage_snapshot
+from sa_candidate_finder.manatal_candidates import is_excluded_stage, load_role_stage_snapshot, sync_role_stages, invalidate_stage_snapshot, update_stage_snapshot_entry
 from sa_candidate_finder.secrets import MANATAL_API_KEY, OPENAI_API_KEY, MANATAL_BASE_URL, GOODFIT_API_KEY
 from openai import OpenAI as _OpenAI
 
@@ -1147,8 +1147,9 @@ def send_goodfit_interview(role_id: str, candidate_id: str):
         except Exception as e:
             print(f"[Goodfit] Manatal stage update failed for job {jid}: {e}", flush=True)
 
-    # Invalidate the role stage snapshot so next Sync Stages picks up the new stage
-    invalidate_stage_snapshot(role_id)
+    # Update the local stage snapshot immediately so the candidate is excluded on the next
+    # page load without needing a full Sync Stages call.
+    update_stage_snapshot_entry(role_id, candidate_id, "Goodfit Interview Sent")
 
     return jsonify({
         "success": True,
