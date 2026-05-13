@@ -264,6 +264,7 @@ def _resolve_anchor_job_id(role: dict, role_result: Optional[dict]) -> Optional[
 def _refresh_live_requirements(role: dict, role_result: Optional[dict]) -> Optional[dict]:
     from sa_candidate_finder.config import load_config
     from sa_candidate_finder.pipeline.extractor import extract_constraints
+    from sa_candidate_finder.manatal_jobs import strip_html
 
     jobs = fetch_all_jobs(MANATAL_API_KEY)
     anchor_job_id = _resolve_anchor_job_id(role, role_result)
@@ -274,7 +275,8 @@ def _refresh_live_requirements(role: dict, role_result: Optional[dict]) -> Optio
     if not anchor_job:
         return None
 
-    jd_text = anchor_job.get("description") or anchor_job.get("position_name") or ""
+    raw_desc = anchor_job.get("description") or ""
+    jd_text = strip_html(raw_desc) if raw_desc else (anchor_job.get("position_name") or "")
     cfg = load_config()
     extraction = extract_constraints(jd_text, cfg)
     return {

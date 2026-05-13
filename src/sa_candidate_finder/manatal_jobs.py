@@ -1,5 +1,25 @@
 import httpx
+import re as _re
 from typing import List, Dict, Any, Optional
+
+
+def strip_html(text: str) -> str:
+    """Strip HTML tags and decode common entities, returning clean plain text."""
+    if not text:
+        return ""
+    # Replace block-level tags with newlines so paragraphs don't run together
+    text = _re.sub(r"<(?:br|p|li|h[1-6]|div|tr)[^>]*>", "\n", text, flags=_re.IGNORECASE)
+    # Remove all remaining tags
+    text = _re.sub(r"<[^>]+>", "", text)
+    # Decode common HTML entities
+    entities = {"&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">",
+                "&quot;": '"', "&#39;": "'", "&ndash;": "–", "&mdash;": "—"}
+    for ent, repl in entities.items():
+        text = text.replace(ent, repl)
+    # Collapse whitespace
+    text = _re.sub(r"\n{3,}", "\n\n", text)
+    text = _re.sub(r"[ \t]+", " ", text)
+    return text.strip()
 
 
 def fetch_all_jobs(api_token: str, page_size: int = 100, force_refresh: bool = False) -> List[Dict[str, Any]]:

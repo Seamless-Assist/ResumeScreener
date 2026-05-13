@@ -58,7 +58,7 @@ def agentic_search_cmd(
     import os
     import re
     from sa_candidate_finder.secrets import MANATAL_API_KEY
-    from sa_candidate_finder.manatal_jobs import fetch_all_jobs
+    from sa_candidate_finder.manatal_jobs import fetch_all_jobs, strip_html
     from sa_candidate_finder.pipeline.agentic_search import agentic_candidate_search
     from sa_candidate_finder.models import CandidateMeta
     from sa_candidate_finder.config import load_config
@@ -86,8 +86,13 @@ def agentic_search_cmd(
         print(f"[DEBUG] Job ID {job_id} not found in jobs list!", flush=True)
         log(f"Error: Job ID {job_id} not found.")
         raise typer.Exit(1)
-    jd_text = job.get("description") or job.get("position_name") or ""
+    raw_desc = job.get("description") or ""
+    jd_text = strip_html(raw_desc) if raw_desc else (job.get("position_name") or "")
     print(f"[DEBUG] Found job: {job.get('position_name')} (ID: {job_id})", flush=True)
+    print(f"[DEBUG] JD text length after HTML strip: {len(jd_text)} chars", flush=True)
+    if len(jd_text) < 50:
+        print(f"[DEBUG] WARNING: JD text is very short ({len(jd_text)} chars). Description may be missing in Manatal.", flush=True)
+        log(f"[AgenticSearch] WARNING: JD text is very short ({len(jd_text)} chars). Keyword extraction may be unreliable.")
     log(f"[AgenticSearch] Job: {job.get('position_name')} (ID: {job_id})")
 
 
