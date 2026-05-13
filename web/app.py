@@ -1108,23 +1108,21 @@ def send_goodfit_interview(role_id: str, candidate_id: str):
         app_id = existing["application_id"]
         # Verify the application still exists in Goodfit (could have been deleted).
         if _goodfit.application_exists(GOODFIT_API_KEY, app_id):
+            cached_url = existing.get("direct_apply_url", "")
             if force_resend:
-                try:
-                    _goodfit.resend_invite(GOODFIT_API_KEY, app_id)
-                    print(f"[Goodfit] Resent invite for candidate {candidate_id} (app {app_id})", flush=True)
-                except Exception as e:
-                    return jsonify({"success": False, "error": f"Failed to resend invite: {e}"}), 500
                 return jsonify({
                     "success": True,
                     "resent": True,
                     "application_id": app_id,
                     "goodfit_job_title": existing.get("goodfit_job_title", ""),
+                    "direct_apply_url": cached_url,
                 })
             return jsonify({
                 "success": True,
                 "already_sent": True,
                 "application_id": app_id,
                 "goodfit_job_title": existing.get("goodfit_job_title", ""),
+                "direct_apply_url": cached_url,
             })
         # Application no longer exists in Goodfit — clear stale cache and re-invite.
         print(f"[Goodfit] Application {app_id} not found in Goodfit; clearing stale invite and re-sending for candidate {candidate_id}.", flush=True)
@@ -1183,11 +1181,20 @@ def send_goodfit_interview(role_id: str, candidate_id: str):
         or ""
     )
 
+    # Build the direct apply URL — candidates use this instead of the magic link email,
+    # which is broken due to Goodfit's API creating UUID-based users that can't
+    # authenticate via the platform's Firebase auth.
+    job_slug = goodfit_job.get("slug", "")
+    from sa_candidate_finder.goodfit import GOODFIT_APPLY_BASE
+    direct_apply_url = f"{GOODFIT_APPLY_BASE}/{job_slug}" if job_slug else ""
+
     # Persist invite in the candidate's local cache
     _save_goodfit_invite(candidate_id, role_id, {
         "application_id": str(application_id),
         "goodfit_job_id": goodfit_job["id"],
         "goodfit_job_title": goodfit_job.get("title", ""),
+        "goodfit_job_slug": job_slug,
+        "direct_apply_url": direct_apply_url,
         "candidate_email": candidate_email,
         "sent_at": time.time(),
     })
@@ -1208,6 +1215,7 @@ def send_goodfit_interview(role_id: str, candidate_id: str):
         "success": True,
         "application_id": str(application_id),
         "goodfit_job_title": goodfit_job.get("title", ""),
+        "direct_apply_url": direct_apply_url,
     })
 
 
