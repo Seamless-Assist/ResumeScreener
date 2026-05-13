@@ -123,30 +123,129 @@ def _sanitize_resume_text(resume_text: str) -> str:
         return "__RESUME_PARSE_FAILED__"
     return rt
 
+# Only candidates in these stages are eligible for ranking.
+# Candidates in any other named stage (Goodfit, hired, phone screen, etc.) are excluded.
+# Candidates with no stage set are also included (newly added, not yet staged).
+_ALLOWED_STAGES: set[str] = {
+    "new candidates",
+    "filtered resume",
+}
+
+
+def _normalize_stage_name(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def is_excluded_stage(value: Any) -> bool:
+    """Return True if the candidate should be excluded from ranking.
+
+    Candidates are included only when their stage is blank (not yet set) or
+    matches one of the allowed stages exactly.
+    """
+    normalized = _normalize_stage_name(value)
+    if not normalized:
+        return False  # no stage set — include (newly added candidates)
+    return normalized not in _ALLOWED_STAGES
+
+
+_STAGE_SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), '../../cache/stage_snapshots')
+
+
+def load_role_stage_snapshot(role_id: str) -> Dict[str, str]:
+    """Read the most recent stage snapshot for a role from disk (no API call).
+
+    Returns {candidate_id: stage_name} or empty dict if no snapshot exists.
+    """
+    os.makedirs(_STAGE_SNAPSHOT_DIR, exist_ok=True)
+    path = os.path.join(_STAGE_SNAPSHOT_DIR, f"role_{role_id}.json")
+    try:
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                snap = json.load(f)
+            return snap.get('stages', {})
+    except Exception:
+        pass
+    return {}
+
+
+def sync_role_stages(api_token: str, role_id: str, job_ids: List[str]) -> Dict[str, str]:
+    """Fetch current pipeline stages for all candidates in the role from Manatal.
+
+    Writes the result to a per-role snapshot file and returns {candidate_id: stage_name}.
+    Throttles requests to avoid 429 rate limits.
+    """
+    os.makedirs(_STAGE_SNAPSHOT_DIR, exist_ok=True)
+    headers = {"Authorization": f"Token {api_token}", "accept": "application/json"}
+    stages: Dict[str, str] = {}
+    _last_req = [0.0]
+
+    def _throttle(min_gap: float = 0.7) -> None:
+        elapsed = time.time() - _last_req[0]
+        if elapsed < min_gap:
+            time.sleep(min_gap - elapsed)
+        _last_req[0] = time.time()
+
+    for job_id in job_ids:
+        page = 1
+        while True:
+            _throttle()
+            try:
+                resp = httpx.get(
+                    f"https://api.manatal.com/open/v3/jobs/{job_id}/matches/",
+                    headers=headers,
+                    params={"page": page, "page_size": 100},
+                    timeout=20,
+                )
+                if resp.status_code == 429:
+                    retry_after = int(resp.headers.get("Retry-After", "10"))
+                    print(f"[SyncStages] 429 on job {job_id} — waiting {retry_after}s", flush=True)
+                    time.sleep(retry_after)
+                    continue
+                resp.raise_for_status()
+            except Exception as e:
+                print(f"[SyncStages] Error fetching job {job_id}: {e}", flush=True)
+                break
+
+            data = resp.json()
+            results = data.get("results") or data.get("data") or []
+            for match in results:
+                if not isinstance(match, dict):
+                    continue
+                cand = match.get("candidate") or {}
+                cand_id = cand.get("id") if isinstance(cand, dict) else cand
+                stage_obj = match.get("stage") or match.get("job_pipeline_stage") or {}
+                stage_name = stage_obj.get("name", "") if isinstance(stage_obj, dict) else ""
+                if cand_id is not None:
+                    stages[str(cand_id)] = str(stage_name)
+            if len(results) < 100:
+                break
+            page += 1
+
+    path = os.path.join(_STAGE_SNAPSHOT_DIR, f"role_{role_id}.json")
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'fetched_at': time.time(), 'stages': stages}, f)
+    except Exception as e:
+        print(f"[SyncStages] Failed to write snapshot: {e}", flush=True)
+
+    return stages
+
+
+def invalidate_stage_snapshot(role_id: str) -> None:
+    """Delete the cached stage snapshot for a role so the next sync fetches fresh data."""
+    path = os.path.join(_STAGE_SNAPSHOT_DIR, f"role_{role_id}.json")
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        print(f"[SyncStages] Could not invalidate snapshot for role {role_id}: {e}", flush=True)
+
+
 def fetch_candidates_by_job(api_token: str, job_id: str, page_size: int = 100) -> List[CandidateMeta]:
     """
     Fetch candidates who have applied to a specific job from Manatal.
     """
-    excluded_statuses = {
-        "goodfit interview",
-        "goodfit interview sent",
-        "goodfit interview approved",
-        "goodfit interview failed",
-        "final interview failed",
-        "added to pool",
-        "hired",
-    }
-
-    def _normalize_stage_name(value: Any) -> str:
-        return " ".join(str(value or "").strip().lower().split())
-
-    def _is_excluded_stage(value: Any) -> bool:
-        normalized = _normalize_stage_name(value)
-        if not normalized:
-            return False
-        if normalized in excluded_statuses:
-            return True
-        return any(normalized.startswith(prefix) for prefix in ("goodfit interview",))
+    _is_excluded_stage = is_excluded_stage
 
     filtered_status_total = 0
     filtered_status_breakdown: dict[str, int] = {}
@@ -759,6 +858,103 @@ def fresh_resume_url(api_token: str, candidate_id: str) -> str:
     except Exception as e:
         print(f"[Resume URL] Could not refresh URL for candidate {candidate_id}: {e}", flush=True)
     return ''
+
+
+def fetch_candidate_contact(api_token: str, candidate_id: str) -> dict:
+    """Return email and name for a candidate, fetched fresh from Manatal.
+
+    Falls back to empty strings if unavailable.
+    """
+    url = f"https://api.manatal.com/open/v3/candidates/{candidate_id}/"
+    headers = {"Authorization": f"Token {api_token}", "accept": "application/json"}
+    try:
+        resp = httpx.get(url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            return {
+                "email": data.get("email", ""),
+                "name": data.get("name") or data.get("full_name", ""),
+            }
+    except Exception as e:
+        print(f"[Manatal] Failed to fetch contact for candidate {candidate_id}: {e}", flush=True)
+    return {"email": "", "name": ""}
+
+
+def update_match_stage(api_token: str, job_id: str, candidate_id: str, stage_name: str) -> bool:
+    """Move a candidate to a named pipeline stage in Manatal for the given job.
+
+    Returns True on success, False if the update could not be completed.
+    Failures are logged but do not raise.
+    """
+    headers = {
+        "Authorization": f"Token {api_token}",
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
+    base_url = f"https://api.manatal.com/open/v3/jobs/{job_id}/matches/"
+
+    # Step 1: find the match record for this candidate
+    match_id: Optional[int] = None
+    page = 1
+    while True:
+        try:
+            resp = httpx.get(base_url, headers=headers, params={"page": page, "page_size": 100}, timeout=15)
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"[Manatal] Could not list matches for job {job_id}: {e}", flush=True)
+            return False
+        data = resp.json()
+        results = data.get("results") or data.get("data") or []
+        for match in results:
+            if not isinstance(match, dict):
+                continue
+            cand = match.get("candidate") or {}
+            cand_id = cand.get("id") if isinstance(cand, dict) else cand
+            if str(cand_id) == str(candidate_id):
+                match_id = match.get("id")
+                break
+        if match_id is not None:
+            break
+        if len(results) < 100:
+            break
+        page += 1
+
+    if match_id is None:
+        print(f"[Manatal] No match found for candidate {candidate_id} in job {job_id}", flush=True)
+        return False
+
+    # Step 2: look up the pipeline stage ID
+    target_stage_id: Optional[int] = None
+    target_norm = " ".join(stage_name.strip().lower().split())
+    stages_url = f"https://api.manatal.com/open/v3/jobs/{job_id}/pipeline-stages/"
+    try:
+        resp = httpx.get(stages_url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            stages_data = resp.json()
+            stages = stages_data.get("results") or stages_data.get("data") or stages_data
+            if isinstance(stages, list):
+                for stage in stages:
+                    if isinstance(stage, dict):
+                        sn = " ".join(str(stage.get("name", "")).strip().lower().split())
+                        if sn == target_norm:
+                            target_stage_id = stage.get("id")
+                            break
+    except Exception as e:
+        print(f"[Manatal] Could not fetch pipeline stages for job {job_id}: {e}", flush=True)
+
+    # Step 3: PATCH the match
+    patch_url = f"https://api.manatal.com/open/v3/jobs/{job_id}/matches/{match_id}/"
+    payload = {"stage": target_stage_id} if target_stage_id is not None else {"stage": {"name": stage_name}}
+    try:
+        resp = httpx.patch(patch_url, headers=headers, json=payload, timeout=15)
+        if resp.status_code in (200, 204):
+            print(f"[Manatal] Stage updated to '{stage_name}' for candidate {candidate_id} in job {job_id}", flush=True)
+            return True
+        print(f"[Manatal] Stage PATCH returned {resp.status_code}: {resp.text[:200]}", flush=True)
+        return False
+    except Exception as e:
+        print(f"[Manatal] Exception patching match stage: {e}", flush=True)
+        return False
 
 
 def _parse_candidate(data: Dict[str, Any]) -> CandidateMeta:

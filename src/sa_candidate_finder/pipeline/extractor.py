@@ -244,6 +244,8 @@ def _score_keyword(canonical: str, jd_text: str, title_line: str) -> tuple[int, 
     score = 0
     if freq > 0:
         score += 3 * freq
+        if token in _DOMAIN_PRIORITY:
+            score += 2
     first_pos = jd.find(token)
     if first_pos != -1:
         quarter = max(1, len(jd) // 4)
@@ -253,8 +255,6 @@ def _score_keyword(canonical: str, jd_text: str, title_line: str) -> tuple[int, 
         first_pos = 10**9
     if token in title_line.lower():
         score += 4
-    if token in _DOMAIN_PRIORITY:
-        score += 2
     return score, first_pos
 
 
@@ -287,9 +287,9 @@ def _heuristic_keywords_from_jd(jd_text: str, max_keywords: int) -> list[str]:
         if score > 0 or canonical in jd_lower:
             ranked.append((canonical, max(score, 1), first_pos))
 
-    # Fallback to broad but useful defaults if nothing domain-specific matched.
+    # Fallback to generic defaults if nothing domain-specific matched.
     if not ranked:
-        defaults = ["patient communication", "care coordination", "clinical documentation"]
+        defaults = ["communication", "coordination", "management"]
         ranked = [(k, 1, jd_lower.find(k) if k in jd_lower else 10**9) for k in defaults]
 
     ranked.sort(key=lambda x: (-x[1], x[2], -len(x[0]), x[0]))

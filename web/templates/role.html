@@ -189,6 +189,11 @@
                 style="padding:8px 16px;background:#A67D44;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
                 onmouseover="this.style.background='#8a6435'" onmouseout="this.style.background='#A67D44'"
                 title="Fetch the latest job description from Manatal, then re-rank candidates">Refresh &amp; Re-rank</button>
+        <button type="button" id="sync-stages-btn"
+                onclick="syncStages('{{ role.id }}')"
+                style="padding:8px 16px;background:#1a6644;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
+                onmouseover="this.style.background='#145235'" onmouseout="this.style.background='#1a6644'"
+                title="Refresh candidate pipeline stages from Manatal without re-ranking">Sync Stages</button>
         <a href="/role/{{ role.id }}/clear-overrides"
            style="padding:8px 12px;background:#EFE9E1;color:#11100F;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;">
            Reset
@@ -289,6 +294,7 @@
         <th style="text-align:center;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Tier</th>
         <th style="text-align:left;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Manatal Status</th>
         <th style="text-align:center;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Review</th>
+        <th style="text-align:center;padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">AI Interview</th>
       </tr>
     </thead>
     <tbody>
@@ -335,6 +341,18 @@
             <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(17,16,15,.08);color:#11100F;font-size:11px;font-weight:700;">Not Evaluated by LLM</span>
           {% endif %}
         </td>
+        <td style="padding:10px 16px;text-align:center;" id="gf-cell-{{ c.id }}">
+          {% if c.goodfit_invite and c.goodfit_invite.application_id %}
+            <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(30,120,80,.12);color:#1a6644;font-size:11px;font-weight:700;">Invite Sent ✓</span>
+          {% else %}
+            <button onclick="event.stopPropagation(); sendGoodfitInvite('{{ role.id }}', '{{ c.id }}')"
+                    id="gf-btn-{{ c.id }}"
+                    style="padding:4px 10px;background:#1a6644;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;"
+                    onmouseover="this.style.background='#145235'" onmouseout="this.style.background='#1a6644'">
+              Send to AI Interview
+            </button>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -369,6 +387,65 @@
 
 {% block scripts %}
 <script>
+function syncStages(roleId) {
+  var btn = document.getElementById('sync-stages-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  btn.style.background = '#888';
+  fetch('/role/' + roleId + '/sync-stages', {method: 'POST'})
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      btn.textContent = 'Sync Stages';
+      btn.style.background = '#1a6644';
+      btn.disabled = false;
+      window.location.reload();
+    } else {
+      btn.textContent = 'Sync failed';
+      btn.style.background = '#b04000';
+      btn.disabled = false;
+      alert('Sync failed: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(function() {
+    btn.textContent = 'Sync Stages';
+    btn.style.background = '#1a6644';
+    btn.disabled = false;
+    alert('Network error — please try again.');
+  });
+}
+
+function sendGoodfitInvite(roleId, candidateId) {
+  var btn = document.getElementById('gf-btn-' + candidateId);
+  var cell = document.getElementById('gf-cell-' + candidateId);
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  btn.style.background = '#888';
+  fetch('/role/' + roleId + '/candidate/' + candidateId + '/send-goodfit-interview', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      cell.innerHTML = '<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(30,120,80,.12);color:#1a6644;font-size:11px;font-weight:700;">Invite Sent ✓</span>';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Send to AI Interview';
+      btn.style.background = '#1a6644';
+      alert('Could not send invite:\n' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.textContent = 'Send to AI Interview';
+    btn.style.background = '#1a6644';
+    alert('Network error — please try again.');
+  });
+}
+
 var overrideKeywords = {{ role.session_override_filters|tojson }};
 var removedKeywords = {{ role.session_removed_keywords|tojson }};
 var disabledHardFilters = {{ role.session_disabled_hard_filters|tojson }};

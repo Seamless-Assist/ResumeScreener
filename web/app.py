@@ -1,6 +1,13 @@
 """SeamlessAssist Candidate Finder web UI backed by live jobs + saved role runs."""
 from __future__ import annotations
 
+# Load .env from the project root before any other imports read os.getenv()
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(dotenv_path=str(__import__('pathlib').Path(__file__).resolve().parent.parent / '.env'))
+except ImportError:
+    pass
+
 import json
 import os
 import re
@@ -22,7 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from sa_candidate_finder.manatal_jobs import fetch_all_jobs
-from sa_candidate_finder.secrets import MANATAL_API_KEY, OPENAI_API_KEY, MANATAL_BASE_URL
+from sa_candidate_finder.manatal_candidates import is_excluded_stage, load_role_stage_snapshot, sync_role_stages, invalidate_stage_snapshot
+from sa_candidate_finder.secrets import MANATAL_API_KEY, OPENAI_API_KEY, MANATAL_BASE_URL, GOODFIT_API_KEY
 from openai import OpenAI as _OpenAI
 
 _openai_client = _OpenAI(api_key=OPENAI_API_KEY)
@@ -278,7 +286,7 @@ def _refresh_live_requirements(role: dict, role_result: Optional[dict]) -> Optio
 
 
 def _infer_status(jobs: list[dict], role_result: Optional[dict]) -> str:
-    if any(j.get("status") == "on_hold" for j in jobs):
+    if jobs and all(j.get("status") == "on_hold" for j in jobs):
         return "On hold"
     if role_result and role_result.get("top_candidates"):
         return "Shortlist review"
@@ -504,7 +512,11 @@ def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_d
 @app.context_processor
 def inject_nav_roles():
     roles = _build_roles()
-    return {"nav_roles": roles[:12]}
+    nav = sorted(
+        [r for r in roles if r.get("status") != "On hold"],
+        key=lambda r: r["name"].lower(),
+    )
+    return {"nav_roles": nav}
 
 
 @app.route("/")
@@ -541,6 +553,19 @@ def role_detail(role_id: str):
 
     role_result = _load_role_results(role_id) or {}
     candidates = role_result.get("candidates", [])
+
+    # Load the most recently synced stage snapshot (local file read — no API call).
+    # Use Sync Stages button to refresh from Manatal when candidates have moved pipeline stages.
+    live_stages = load_role_stage_snapshot(role_id)
+
+    # Overwrite each candidate's manatal_stage with the synced value so the column is current
+    for c in candidates:
+        live = live_stages.get(str(c.get("id", "")))
+        if live is not None:
+            c["manatal_stage"] = live
+
+    # Filter out candidates whose current stage is not in the allowed set
+    candidates = [c for c in candidates if not is_excluded_stage(c.get("manatal_stage", ""))]
     # Sort: Tier A → B → C → untiered (disqualified or keyword-only), then by score desc within each group
     _tier_order = {"A": 0, "B": 1, "C": 2}
     candidates = sorted(
@@ -591,6 +616,11 @@ def role_detail(role_id: str):
     if sanitized_disabled != session_disabled:
         _set_role_session_disabled_hard_filters(role_id, sanitized_disabled)
     role["session_disabled_hard_filters"] = sanitized_disabled
+
+    # Attach Goodfit invite status to each candidate
+    for c in candidates:
+        invite = _load_goodfit_invite(str(c.get("id", "")), role_id)
+        c["goodfit_invite"] = invite
 
     return render_template("role.html", role=role, candidates=candidates)
 
@@ -937,6 +967,8 @@ def candidate_detail(role_id: str, candidate_id: str):
     if not candidate:
         abort(404)
 
+    goodfit_invite = _load_goodfit_invite(str(candidate_id), role_id)
+
     return render_template(
         "candidate.html",
         role=role,
@@ -944,7 +976,185 @@ def candidate_detail(role_id: str, candidate_id: str):
         hard_filters=role_result.get("hard_filters", []),
         llm_eval_policy=role_result.get("llm_eval_policy", {}),
         final_keyword_set=role_result.get("final_keyword_set", []),
+        goodfit_invite=goodfit_invite,
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage sync (refresh Manatal pipeline stages without a full re-rank)
+# ---------------------------------------------------------------------------
+
+@app.route("/role/<role_id>/sync-stages", methods=["POST"])
+def sync_stages(role_id: str):
+    roles = _build_roles()
+    role = next((r for r in roles if r["id"] == role_id), None)
+    if not role:
+        return jsonify({"success": False, "error": "Role not found"}), 404
+
+    try:
+        stages = sync_role_stages(MANATAL_API_KEY, role_id, role.get("job_ids", []))
+        return jsonify({"success": True, "candidates_synced": len(stages)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Goodfit AI interview helpers
+# ---------------------------------------------------------------------------
+
+def _goodfit_invite_path(candidate_id: str) -> Path:
+    return ROOT / "cache" / "candidates" / f"candidate_{candidate_id}.json"
+
+
+def _load_goodfit_invite(candidate_id: str, role_id: str) -> Optional[dict]:
+    path = _goodfit_invite_path(candidate_id)
+    try:
+        if not path.exists():
+            return None
+        cached = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(cached, dict):
+            return None
+        return cached.get("goodfit_invites", {}).get(role_id)
+    except Exception:
+        return None
+
+
+def _save_goodfit_invite(candidate_id: str, role_id: str, invite_data: dict) -> None:
+    path = _goodfit_invite_path(candidate_id)
+    try:
+        if path.exists():
+            cached = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(cached, dict):
+                cached = {}
+        else:
+            cached = {}
+        invites = cached.get("goodfit_invites", {})
+        if not isinstance(invites, dict):
+            invites = {}
+        invites[role_id] = invite_data
+        cached["goodfit_invites"] = invites
+        path.write_text(json.dumps(cached), encoding="utf-8")
+    except Exception as e:
+        print(f"[Goodfit] Failed to persist invite data for candidate {candidate_id}: {e}", flush=True)
+
+
+@app.route("/role/<role_id>/candidate/<candidate_id>/send-goodfit-interview", methods=["POST"])
+def send_goodfit_interview(role_id: str, candidate_id: str):
+    """Send a Goodfit AI interview invite to a candidate and move them in Manatal."""
+    import httpx as _httpx
+    from sa_candidate_finder import goodfit as _goodfit
+    from sa_candidate_finder.manatal_candidates import fetch_candidate_contact, update_match_stage
+
+    if not GOODFIT_API_KEY:
+        return jsonify({"success": False, "error": "GOODFIT_API_KEY is not configured on the server"}), 500
+
+    roles = _build_roles()
+    role = next((r for r in roles if r["id"] == role_id), None)
+    if not role:
+        return jsonify({"success": False, "error": "Role not found"}), 404
+
+    # Check if already sent
+    existing = _load_goodfit_invite(candidate_id, role_id)
+    if existing and existing.get("application_id"):
+        return jsonify({
+            "success": True,
+            "already_sent": True,
+            "application_id": existing["application_id"],
+            "goodfit_job_title": existing.get("goodfit_job_title", ""),
+        })
+
+    # Get candidate name + email — try cache first, then Manatal API
+    cache_path = ROOT / "cache" / "candidates" / f"candidate_{candidate_id}.json"
+    candidate_name = ""
+    candidate_email = ""
+    try:
+        if cache_path.exists():
+            raw = json.loads(cache_path.read_text(encoding="utf-8"))
+            data = raw.get("data", {}) if isinstance(raw, dict) else {}
+            candidate_name = data.get("name") or data.get("full_name", "")
+            candidate_email = data.get("email", "")
+    except Exception:
+        pass
+
+    if not candidate_email:
+        contact = fetch_candidate_contact(MANATAL_API_KEY, candidate_id)
+        candidate_email = contact.get("email", "")
+        if not candidate_name:
+            candidate_name = contact.get("name", "")
+
+    if not candidate_email:
+        return jsonify({"success": False, "error": "No email address found for this candidate in Manatal"}), 400
+
+    # Find the matching Goodfit job by role title
+    try:
+        goodfit_job = _goodfit.find_goodfit_job_by_title(GOODFIT_API_KEY, role["name"])
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Failed to fetch Goodfit jobs: {e}"}), 500
+
+    if not goodfit_job:
+        return jsonify({
+            "success": False,
+            "error": f"No active Goodfit role found matching '{role['name']}'. "
+                     "Please create a matching role in Goodfit first.",
+        }), 404
+
+    # Send the invite
+    try:
+        app_data = _goodfit.send_interview_invite(
+            GOODFIT_API_KEY,
+            goodfit_job["id"],
+            candidate_name,
+            candidate_email,
+        )
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Goodfit API error: {e}"}), 500
+
+    # Extract application ID from the response (handles different response shapes)
+    application_id = (
+        app_data.get("id")
+        or (app_data.get("application") or {}).get("id")
+        or ""
+    )
+
+    # Persist invite in the candidate's local cache
+    _save_goodfit_invite(candidate_id, role_id, {
+        "application_id": str(application_id),
+        "goodfit_job_id": goodfit_job["id"],
+        "goodfit_job_title": goodfit_job.get("title", ""),
+        "candidate_email": candidate_email,
+        "sent_at": time.time(),
+    })
+
+    # Update Manatal stage (best-effort — failure does not block the response)
+    for jid in role.get("job_ids", []):
+        try:
+            if update_match_stage(MANATAL_API_KEY, jid, candidate_id, "Goodfit Interview Sent"):
+                break
+        except Exception as e:
+            print(f"[Goodfit] Manatal stage update failed for job {jid}: {e}", flush=True)
+
+    # Invalidate the role stage snapshot so next Sync Stages picks up the new stage
+    invalidate_stage_snapshot(role_id)
+
+    return jsonify({
+        "success": True,
+        "application_id": str(application_id),
+        "goodfit_job_title": goodfit_job.get("title", ""),
+    })
+
+
+@app.route("/role/<role_id>/candidate/<candidate_id>/goodfit-status")
+def goodfit_interview_status(role_id: str, candidate_id: str):
+    """Return the stored Goodfit invite status for a candidate."""
+    invite = _load_goodfit_invite(candidate_id, role_id)
+    if not invite:
+        return jsonify({"sent": False})
+    return jsonify({
+        "sent": True,
+        "application_id": invite.get("application_id", ""),
+        "goodfit_job_title": invite.get("goodfit_job_title", ""),
+        "sent_at": invite.get("sent_at", 0),
+    })
 
 
 @app.route("/resume-proxy")

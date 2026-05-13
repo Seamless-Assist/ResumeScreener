@@ -59,6 +59,7 @@
       body { overflow: auto !important; display: block !important; height: auto !important; }
       #sa-sidebar {
         position: fixed !important; top: 0; left: 0; bottom: 0;
+        width: 300px !important; min-width: 300px !important;
         z-index: 200; transform: translateX(-100%);
         transition: transform .25s ease; overflow-y: auto;
       }
@@ -107,7 +108,7 @@
   </div>
 
   <!-- ── Left navigation ─────────────────────────────────────────── -->
-  <aside id="sa-sidebar" style="width:248px; min-width:248px; background:#11100F; border-right:1px solid rgba(205,188,171,.12);" class="flex flex-col flex-shrink-0">
+  <aside id="sa-sidebar" style="width:300px; min-width:300px; background:#11100F; border-right:1px solid rgba(205,188,171,.12);" class="flex flex-col flex-shrink-0">
 
     <!-- Logo / brand -->
     <div style="padding:20px 20px 18px; border-bottom:1px solid rgba(205,188,171,.12);">
@@ -123,7 +124,7 @@
     </div>
 
     <!-- Nav sections -->
-    <nav style="flex:1;padding:16px 10px;overflow-y:auto;display:flex;flex-direction:column;gap:20px;">
+    <nav style="flex:1;min-height:0;padding:16px 10px;overflow-y:auto;display:flex;flex-direction:column;gap:20px;scrollbar-width:thin;scrollbar-color:rgba(205,188,171,.25) transparent;">
 
       <div>
         <p class="nav-label">Overview</p>
@@ -137,10 +138,11 @@
       </div>
 
       <div>
-        <p class="nav-label">Active Roles</p>
+        <p class="nav-label">Active Roles ({{ nav_roles|length }})</p>
         {% for r in nav_roles %}
-        <a href="/role/{{ r.id }}" class="nav-link {% if request.path == '/role/' ~ r.id %}active{% endif %}">
-          <!-- status dot using palette -->
+        <a href="/role/{{ r.id }}"
+           class="nav-link {% if request.path == '/role/' ~ r.id %}active{% endif %}"
+           title="{{ r.name }}">
           <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;
             background:{%
               if r.status_color == 'gold' %}#A67D44{%

@@ -1,0 +1,106 @@
+import re
+import time
+from typing import Optional
+
+import httpx
+
+GOODFIT_BASE_URL = "https://horizon.api.goodfit.studio/api/v1"
+_JOBS_CACHE_TTL = 3600  # 1 hour
+
+_jobs_cache: list[dict] = []
+_jobs_cache_at: float = 0.0
+
+
+def _headers(api_key: str) -> dict:
+    return {
+        "x-api-key": api_key,
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
+
+
+def _normalize_title(s: str) -> str:
+    s = re.sub(r"[^a-z0-9 ]+", " ", (s or "").lower().strip())
+    return " ".join(s.split())
+
+
+def list_goodfit_jobs(api_key: str, force_refresh: bool = False) -> list[dict]:
+    """Return all active Goodfit jobs, cached in memory for 1 hour."""
+    global _jobs_cache, _jobs_cache_at
+    if not force_refresh and time.time() - _jobs_cache_at < _JOBS_CACHE_TTL and _jobs_cache:
+        return _jobs_cache
+
+    all_jobs: list[dict] = []
+    page = 1
+    while True:
+        resp = httpx.get(
+            f"{GOODFIT_BASE_URL}/jobs",
+            headers=_headers(api_key),
+            params={"page": page, "limit": 100, "status": "active"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        jobs = data.get("data", [])
+        all_jobs.extend(jobs)
+        if not data.get("pagination", {}).get("hasMore"):
+            break
+        page += 1
+
+    _jobs_cache = all_jobs
+    _jobs_cache_at = time.time()
+    return all_jobs
+
+
+def find_goodfit_job_by_title(api_key: str, role_title: str) -> Optional[dict]:
+    """Find a Goodfit job matching the given role title (case-insensitive, normalized).
+
+    Tries exact normalized match first, then substring match.
+    """
+    norm = _normalize_title(role_title)
+    jobs = list_goodfit_jobs(api_key)
+    for job in jobs:
+        if _normalize_title(job.get("title", "")) == norm:
+            return job
+    for job in jobs:
+        jt = _normalize_title(job.get("title", ""))
+        if norm in jt or jt in norm:
+            return job
+    return None
+
+
+def send_interview_invite(
+    api_key: str,
+    goodfit_job_id: str,
+    candidate_name: str,
+    candidate_email: str,
+) -> dict:
+    """Create a Goodfit application and send the interview invite email.
+
+    Returns the raw application data dict from the API response.
+    """
+    resp = httpx.post(
+        f"{GOODFIT_BASE_URL}/applications",
+        headers=_headers(api_key),
+        json={
+            "jobId": goodfit_job_id,
+            "email": candidate_email,
+            "name": candidate_name,
+            "source": "individual_invite",
+            "sendInvite": True,
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("data", {})
+
+
+def get_application(api_key: str, application_id: str) -> dict:
+    """Return full application details including current status."""
+    resp = httpx.get(
+        f"{GOODFIT_BASE_URL}/applications/{application_id}",
+        headers=_headers(api_key),
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("data", {})

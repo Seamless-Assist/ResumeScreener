@@ -56,6 +56,20 @@
      <a href="/resume-download/{{ c.id }}" target="_blank" rel="noopener noreferrer"
        style="flex-shrink:0;padding:10px 20px;background:#EFE9E1;color:#5D1C34;border:1px solid #CDBCAB;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;"
        onmouseover="this.style.background='#f7f1ea'" onmouseout="this.style.background='#EFE9E1'">Download Resume</a>
+     <div id="gf-action-area">
+       {% if goodfit_invite and goodfit_invite.application_id %}
+         <span style="display:inline-flex;align-items:center;padding:10px 16px;border-radius:8px;background:rgba(30,120,80,.12);color:#1a6644;font-size:12px;font-weight:700;border:1px solid rgba(30,120,80,.25);">
+           Interview Invite Sent ✓
+         </span>
+       {% else %}
+         <button id="gf-btn"
+                 onclick="sendGoodfitInvitePage('{{ role.id }}', '{{ c.id }}')"
+                 style="flex-shrink:0;padding:10px 20px;background:#1a6644;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;"
+                 onmouseover="this.style.background='#145235'" onmouseout="this.style.background='#1a6644'">
+           Send to AI Interview
+         </button>
+       {% endif %}
+     </div>
     </div>
 </div>
 
@@ -250,6 +264,36 @@
 {% block scripts %}
 <script>
 window.saSetChatContext('{{ role.id }}', '{{ c.id }}');
+
+function sendGoodfitInvitePage(roleId, candidateId) {
+  var btn = document.getElementById('gf-btn');
+  var area = document.getElementById('gf-action-area');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  btn.style.background = '#888';
+  fetch('/role/' + roleId + '/candidate/' + candidateId + '/send-goodfit-interview', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      area.innerHTML = '<span style="display:inline-flex;align-items:center;padding:10px 16px;border-radius:8px;background:rgba(30,120,80,.12);color:#1a6644;font-size:12px;font-weight:700;border:1px solid rgba(30,120,80,.25);">Interview Invite Sent ✓</span>';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Send to AI Interview';
+      btn.style.background = '#1a6644';
+      alert('Could not send invite:\n' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.textContent = 'Send to AI Interview';
+    btn.style.background = '#1a6644';
+    alert('Network error — please try again.');
+  });
+}
 </script>
 <style>
 @media (max-width: 768px) {
