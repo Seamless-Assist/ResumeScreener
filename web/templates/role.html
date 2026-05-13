@@ -343,7 +343,14 @@
         </td>
         <td style="padding:10px 16px;text-align:center;" id="gf-cell-{{ c.id }}">
           {% if c.goodfit_invite and c.goodfit_invite.application_id %}
-            <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(30,120,80,.12);color:#1a6644;font-size:11px;font-weight:700;">Invite Sent ✓</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;">
+              <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(30,120,80,.12);color:#1a6644;font-size:11px;font-weight:700;">Invite Sent ✓</span>
+              <button onclick="event.stopPropagation(); resendGoodfitInvite('{{ role.id }}', '{{ c.id }}')"
+                      id="gf-resend-{{ c.id }}"
+                      title="Resend invite email"
+                      style="padding:2px 6px;background:transparent;color:#1a6644;border:1px solid #1a6644;border-radius:4px;font-size:10px;cursor:pointer;"
+                      onmouseover="this.style.background='rgba(26,102,68,.1)'" onmouseout="this.style.background='transparent'">↺ Resend</button>
+            </span>
           {% else %}
             <button onclick="event.stopPropagation(); sendGoodfitInvite('{{ role.id }}', '{{ c.id }}')"
                     id="gf-btn-{{ c.id }}"
@@ -416,6 +423,16 @@ function syncStages(roleId) {
   });
 }
 
+function _inviteSentBadge(roleId, candidateId) {
+  return '<span style="display:inline-flex;align-items:center;gap:4px;">'
+    + '<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(30,120,80,.12);color:#1a6644;font-size:11px;font-weight:700;">Invite Sent ✓</span>'
+    + '<button onclick="event.stopPropagation(); resendGoodfitInvite(\'' + roleId + '\', \'' + candidateId + '\')"'
+    + ' title="Resend invite email"'
+    + ' style="padding:2px 6px;background:transparent;color:#1a6644;border:1px solid #1a6644;border-radius:4px;font-size:10px;cursor:pointer;"'
+    + ' onmouseover="this.style.background=\'rgba(26,102,68,.1)\'" onmouseout="this.style.background=\'transparent\'">↺ Resend</button>'
+    + '</span>';
+}
+
 function sendGoodfitInvite(roleId, candidateId) {
   var btn = document.getElementById('gf-btn-' + candidateId);
   var cell = document.getElementById('gf-cell-' + candidateId);
@@ -430,7 +447,7 @@ function sendGoodfitInvite(roleId, candidateId) {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      cell.innerHTML = '<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(30,120,80,.12);color:#1a6644;font-size:11px;font-weight:700;">Invite Sent ✓</span>';
+      cell.innerHTML = _inviteSentBadge(roleId, candidateId);
     } else {
       btn.disabled = false;
       btn.textContent = 'Send to AI Interview';
@@ -442,6 +459,33 @@ function sendGoodfitInvite(roleId, candidateId) {
     btn.disabled = false;
     btn.textContent = 'Send to AI Interview';
     btn.style.background = '#1a6644';
+    alert('Network error — please try again.');
+  });
+}
+
+function resendGoodfitInvite(roleId, candidateId) {
+  var btn = document.getElementById('gf-resend-' + candidateId);
+  var cell = document.getElementById('gf-cell-' + candidateId);
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Resending…';
+  fetch('/role/' + roleId + '/candidate/' + candidateId + '/send-goodfit-interview?resend=1', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      cell.innerHTML = _inviteSentBadge(roleId, candidateId);
+    } else {
+      btn.disabled = false;
+      btn.textContent = '↺ Resend';
+      alert('Could not resend invite:\n' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(function() {
+    btn.disabled = false;
+    btn.textContent = '↺ Resend';
     alert('Network error — please try again.');
   });
 }

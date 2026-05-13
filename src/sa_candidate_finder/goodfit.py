@@ -104,3 +104,27 @@ def get_application(api_key: str, application_id: str) -> dict:
     )
     resp.raise_for_status()
     return resp.json().get("data", {})
+
+
+def application_exists(api_key: str, application_id: str) -> bool:
+    """Return True if the Goodfit application still exists (not deleted)."""
+    try:
+        resp = httpx.get(
+            f"{GOODFIT_BASE_URL}/applications/{application_id}",
+            headers=_headers(api_key),
+            timeout=10,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def resend_invite(api_key: str, application_id: str) -> dict:
+    """Resend the invite email for an existing Goodfit application."""
+    resp = httpx.post(
+        f"{GOODFIT_BASE_URL}/applications/{application_id}/resend-invite",
+        headers=_headers(api_key),
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("data", {})

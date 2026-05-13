@@ -1069,6 +1069,23 @@ def _save_goodfit_invite(candidate_id: str, role_id: str, invite_data: dict) -> 
         print(f"[Goodfit] Failed to persist invite data for candidate {candidate_id}: {e}", flush=True)
 
 
+def _delete_goodfit_invite(candidate_id: str, role_id: str) -> None:
+    path = _goodfit_invite_path(candidate_id)
+    try:
+        if not path.exists():
+            return
+        cached = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(cached, dict):
+            return
+        invites = cached.get("goodfit_invites", {})
+        if isinstance(invites, dict):
+            invites.pop(role_id, None)
+            cached["goodfit_invites"] = invites
+            path.write_text(json.dumps(cached), encoding="utf-8")
+    except Exception as e:
+        print(f"[Goodfit] Failed to delete invite data for candidate {candidate_id}: {e}", flush=True)
+
+
 @app.route("/role/<role_id>/candidate/<candidate_id>/send-goodfit-interview", methods=["POST"])
 def send_goodfit_interview(role_id: str, candidate_id: str):
     """Send a Goodfit AI interview invite to a candidate and move them in Manatal."""
@@ -1086,13 +1103,32 @@ def send_goodfit_interview(role_id: str, candidate_id: str):
 
     # Check if already sent
     existing = _load_goodfit_invite(candidate_id, role_id)
+    force_resend = request.args.get("resend") == "1"
     if existing and existing.get("application_id"):
-        return jsonify({
-            "success": True,
-            "already_sent": True,
-            "application_id": existing["application_id"],
-            "goodfit_job_title": existing.get("goodfit_job_title", ""),
-        })
+        app_id = existing["application_id"]
+        # Verify the application still exists in Goodfit (could have been deleted).
+        if _goodfit.application_exists(GOODFIT_API_KEY, app_id):
+            if force_resend:
+                try:
+                    _goodfit.resend_invite(GOODFIT_API_KEY, app_id)
+                    print(f"[Goodfit] Resent invite for candidate {candidate_id} (app {app_id})", flush=True)
+                except Exception as e:
+                    return jsonify({"success": False, "error": f"Failed to resend invite: {e}"}), 500
+                return jsonify({
+                    "success": True,
+                    "resent": True,
+                    "application_id": app_id,
+                    "goodfit_job_title": existing.get("goodfit_job_title", ""),
+                })
+            return jsonify({
+                "success": True,
+                "already_sent": True,
+                "application_id": app_id,
+                "goodfit_job_title": existing.get("goodfit_job_title", ""),
+            })
+        # Application no longer exists in Goodfit — clear stale cache and re-invite.
+        print(f"[Goodfit] Application {app_id} not found in Goodfit; clearing stale invite and re-sending for candidate {candidate_id}.", flush=True)
+        _delete_goodfit_invite(candidate_id, role_id)
 
     # Get candidate name + email — try cache first, then Manatal API
     cache_path = ROOT / "cache" / "candidates" / f"candidate_{candidate_id}.json"
