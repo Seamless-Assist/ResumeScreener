@@ -245,8 +245,8 @@
     <p style="font-size:24px;font-weight:700;color:#A67D44;margin-top:4px;">{{ role.tier_a }}</p>
   </div>
   <div style="background:#fff;border:1px solid #CDBCAB;border-radius:12px;padding:14px 16px;">
-    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Last Run (UTC)</p>
-    <p style="font-size:13px;font-weight:600;color:#11100F;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ role.last_ran_at or "-" }}</p>
+    <p style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b6560;">Last Run</p>
+    <p style="font-size:13px;font-weight:600;color:#11100F;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ role.last_ran_at | to_pacific }}</p>
   </div>
 </div>
 

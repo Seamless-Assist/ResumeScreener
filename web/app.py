@@ -38,6 +38,23 @@ _openai_client = _OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SA_WEB_SESSION_SECRET", "sa-dev-session-secret")
 
+
+@app.template_filter("to_pacific")
+def _to_pacific_filter(value: str) -> str:
+    """Convert a UTC ISO-8601 string to a Pacific time display string (PST/PDT)."""
+    dt = _parse_iso_utc(value)
+    if dt is None:
+        return value or "-"
+    from datetime import timedelta
+    # Determine Pacific offset: PDT (UTC-7) Mar–Nov, PST (UTC-8) otherwise
+    # Use a simple DST approximation based on the month
+    month = dt.month
+    is_dst = 3 <= month <= 11
+    offset = timedelta(hours=-7 if is_dst else -8)
+    label = "PDT" if is_dst else "PST"
+    pt = dt + offset
+    return pt.strftime(f"%-m/%-d/%Y %-I:%M %p {label}")
+
 RESULTS_DIR = ROOT / "results"
 SESSION_RESULTS_ROOT = ROOT / "cache" / "session_results"
 
