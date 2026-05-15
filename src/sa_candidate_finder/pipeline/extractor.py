@@ -16,7 +16,7 @@ from sa_candidate_finder.models import RunTelemetry
 _SYSTEM_PROMPT = """
 You are an expert AI recruiting agent. Given a job description, extract the most relevant candidate search filters, keywords, and hard disqualifying criteria.
 
-Also extract a list of up to 10 keywords (1-3 words each, LLM-chosen, not just phrases from the JD) that would maximize candidate search quality for this job. These can be skills, responsibilities, or any other relevant terms.
+Extract exactly 8–10 keywords (1–3 words each) that cover the full range of skills, domain knowledge, and tools a strong candidate would have. Include both abbreviations and their full forms (e.g. "CCM" and "chronic care management"), role-specific technologies, and key domain terms. Cast a wide net — the goal is to surface any candidate who could plausibly be a strong match, not only those who use identical wording to the JD.
 
 Also extract a list of hard dealbreakers from the JD. These are absolute disqualifying criteria — if a candidate violates any one, they cannot be considered regardless of other strengths.
 
@@ -55,6 +55,12 @@ _KEYWORD_SYNONYMS = {
     "telemedicine": "telehealth",
     "patient comms": "patient communication",
     "patient communications": "patient communication",
+    "chronic care management": "ccm",
+    "remote patient monitoring": "rpm",
+    "remote physiologic monitoring": "rpm",
+    "cms compliance": "cms",
+    "medicare billing": "medical billing",
+    "revenue cycle": "revenue cycle management",
 }
 
 _DISPLAY_FORMS = {
@@ -74,17 +80,22 @@ _NOISE_TERMS = {
 _DOMAIN_PRIORITY = {
     "cardiology",
     "chf",
+    "ccm",
+    "rpm",
     "patient communication",
     "care coordination",
+    "care management",
     "clinical documentation",
     "emr/ehr",
     "telehealth",
     "remote patient monitoring",
     "hipaa compliance",
     "medical billing",
+    "revenue cycle management",
+    "cms",
 }
 
-_EXTRACTION_CACHE_VERSION = 2
+_EXTRACTION_CACHE_VERSION = 3
 
 _DEALBREAKER_EXPLICIT_MARKERS = {
     "must",
