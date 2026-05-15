@@ -76,13 +76,7 @@ def send_interview_invite(
     candidate_name: str,
     candidate_email: str,
 ) -> dict:
-    """Create a Goodfit application for tracking purposes.
-
-    NOTE: sendInvite is intentionally False. Goodfit's API creates UUID-based shadow
-    users for new emails that cannot authenticate via the web platform's Firebase auth,
-    causing the magic-link email to produce a 'Page not found' error. Instead, the
-    direct apply URL (app.goodfit.io/jobs/{slug}) is shared with the candidate so they
-    self-register via Firebase and complete the interview without a broken link.
+    """Create a Goodfit application and send the candidate a magic-link invite email.
 
     Returns the raw application data dict from the API response.
     """
@@ -94,7 +88,7 @@ def send_interview_invite(
             "email": candidate_email,
             "name": candidate_name,
             "source": "individual_invite",
-            "sendInvite": False,
+            "sendInvite": True,
         },
         timeout=15,
     )
