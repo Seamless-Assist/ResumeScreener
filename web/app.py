@@ -312,8 +312,8 @@ def _infer_status(jobs: list[dict], role_result: Optional[dict]) -> str:
     return "Sourcing"
 
 
-def _build_roles() -> list[dict]:
-    jobs = fetch_all_jobs(MANATAL_API_KEY)
+def _build_roles(force_refresh: bool = False) -> list[dict]:
+    jobs = fetch_all_jobs(MANATAL_API_KEY, force_refresh=force_refresh)
     active_jobs = [j for j in jobs if j.get("status") in ("active", "on_hold")]
 
     grouped: dict[str, list[dict]] = defaultdict(list)
@@ -674,21 +674,32 @@ def role_refresh_requirements(role_id: str):
 
 @app.route("/role/<role_id>/refresh-and-rerank", methods=["POST"])
 def role_refresh_and_rerank(role_id: str):
-    roles = _build_roles()
+    # Force-refresh jobs so renamed/new Manatal job titles are picked up immediately.
+    roles = _build_roles(force_refresh=True)
     role = next((r for r in roles if r["id"] == role_id), None)
-    if not role:
-        abort(404)
 
-    role_result = _load_role_results(role_id) or {}
+    if not role:
+        # Job title may have changed in Manatal; find the new role by job ID overlap
+        # (job IDs stay the same when a title is renamed).
+        old_result = _load_role_results(role_id) or {}
+        old_job_ids = {str(j) for j in old_result.get("all_job_ids", [])}
+        if old_job_ids:
+            role = next((r for r in roles if set(r["job_ids"]) & old_job_ids), None)
+        if not role:
+            abort(404)
+
+    # Use the live role_id (may differ from the URL param if the title was renamed)
+    effective_role_id = role["id"]
+    role_result = _load_role_results(effective_role_id) or _load_role_results(role_id) or {}
 
     # Refresh live requirements from Manatal and store in session for display
     snapshot = _refresh_live_requirements(role, role_result)
     if snapshot:
-        _set_role_session_requirements(role_id, snapshot)
+        _set_role_session_requirements(effective_role_id, snapshot)
 
     anchor_job_id = _resolve_anchor_job_id(role, role_result)
     if not anchor_job_id:
-        return redirect(url_for("role_detail", role_id=role_id, rerank="no-job-id"))
+        return redirect(url_for("role_detail", role_id=effective_role_id, rerank="no-job-id"))
 
     for key, msg in [
         (OPENAI_API_KEY, "OPENAI_API_KEY is not configured. Set OPENAI_API_KEY in the environment."),
@@ -696,28 +707,33 @@ def role_refresh_and_rerank(role_id: str):
         (MANATAL_BASE_URL, "MANATAL_BASE_URL is not configured. Set MANATAL_BASE_URL in the environment."),
     ]:
         if not key:
-            return redirect(url_for("role_detail", role_id=role_id, rerank="failed", message=msg))
+            return redirect(url_for("role_detail", role_id=effective_role_id, rerank="failed", message=msg))
 
-    # Carry forward any existing session overrides
+    # Carry forward session overrides; migrate from old role_id if title was renamed
     if "keywords" in request.form:
-        _set_role_session_overrides(role_id, _parse_comma_terms(request.form.get("keywords") or ""))
+        _set_role_session_overrides(effective_role_id, _parse_comma_terms(request.form.get("keywords") or ""))
+    elif role_id != effective_role_id:
+        _set_role_session_overrides(effective_role_id, _get_role_session_overrides(role_id))
     if "removed_keywords" in request.form:
-        _set_role_session_removed_keywords(role_id, _parse_comma_terms(request.form.get("removed_keywords") or ""))
+        _set_role_session_removed_keywords(effective_role_id, _parse_comma_terms(request.form.get("removed_keywords") or ""))
+    elif role_id != effective_role_id:
+        _set_role_session_removed_keywords(effective_role_id, _get_role_session_removed_keywords(role_id))
+
     dynamic_rule_norm = {_norm_rule_text(r) for r in _dynamic_hard_filter_rules(role_result)}
     if "disabled_hard_filters" in request.form:
         disabled = [
             r for r in _parse_comma_terms(request.form.get("disabled_hard_filters") or "")
             if _norm_rule_text(r) in dynamic_rule_norm
         ]
-        _set_role_session_disabled_hard_filters(role_id, disabled)
+        _set_role_session_disabled_hard_filters(effective_role_id, disabled)
 
-    session_override_filters = _get_role_session_overrides(role_id)
-    session_removed_keywords = _get_role_session_removed_keywords(role_id)
+    session_override_filters = _get_role_session_overrides(effective_role_id)
+    session_removed_keywords = _get_role_session_removed_keywords(effective_role_id)
     session_disabled_hard_filters = [
-        r for r in _get_role_session_disabled_hard_filters(role_id)
+        r for r in _get_role_session_disabled_hard_filters(effective_role_id)
         if _norm_rule_text(r) in dynamic_rule_norm
     ]
-    _set_role_session_disabled_hard_filters(role_id, session_disabled_hard_filters)
+    _set_role_session_disabled_hard_filters(effective_role_id, session_disabled_hard_filters)
 
     cmd = [
         sys.executable,
@@ -741,13 +757,13 @@ def role_refresh_and_rerank(role_id: str):
     session_results_dir = _session_results_dir(session_id)
     session_results_dir.mkdir(parents=True, exist_ok=True)
 
-    job_id = _create_rerank_job(role_id, session_id)
+    job_id = _create_rerank_job(effective_role_id, session_id)
     threading.Thread(
         target=_run_rerank_job,
-        args=(job_id, role_id, cmd, str(session_results_dir)),
+        args=(job_id, effective_role_id, cmd, str(session_results_dir)),
         daemon=True,
     ).start()
-    return redirect(url_for("role_detail", role_id=role_id, rerank="running", job=job_id))
+    return redirect(url_for("role_detail", role_id=effective_role_id, rerank="running", job=job_id))
 
 
 @app.route("/role/<role_id>/download-excel")
