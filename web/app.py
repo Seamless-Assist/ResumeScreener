@@ -690,6 +690,8 @@ def role_refresh_and_rerank(role_id: str):
 
     # Use the live role_id (may differ from the URL param if the title was renamed)
     effective_role_id = role["id"]
+    if role_id != effective_role_id:
+        _migrate_goodfit_invites(role_id, effective_role_id)
     role_result = _load_role_results(effective_role_id) or _load_role_results(role_id) or {}
 
     # Refresh live requirements from Manatal and store in session for display
@@ -1053,7 +1055,7 @@ def _goodfit_invite_path(candidate_id: str) -> Path:
     return ROOT / "cache" / "candidates" / f"candidate_{candidate_id}.json"
 
 
-def _load_goodfit_invite(candidate_id: str, role_id: str) -> Optional[dict]:
+def _load_goodfit_invite(candidate_id: str, role_id: str, goodfit_job_id: Optional[str] = None) -> Optional[dict]:
     path = _goodfit_invite_path(candidate_id)
     try:
         if not path.exists():
@@ -1061,9 +1063,48 @@ def _load_goodfit_invite(candidate_id: str, role_id: str) -> Optional[dict]:
         cached = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(cached, dict):
             return None
-        return cached.get("goodfit_invites", {}).get(role_id)
+        invites = cached.get("goodfit_invites", {})
+        # Exact role_id match
+        if invites.get(role_id):
+            return invites[role_id]
+        # Fallback: find invite by Goodfit job ID (handles renamed Manatal roles)
+        if goodfit_job_id:
+            for inv in invites.values():
+                if isinstance(inv, dict) and inv.get("goodfit_job_id") == goodfit_job_id:
+                    return inv
+        return None
     except Exception:
         return None
+
+
+def _migrate_goodfit_invites(old_role_id: str, new_role_id: str) -> int:
+    """Copy invite records from old_role_id to new_role_id across all candidate caches.
+
+    Used when a Manatal job title changes and the role_id slug changes with it.
+    Returns number of candidates migrated.
+    """
+    cache_dir = ROOT / "cache" / "candidates"
+    if not cache_dir.exists():
+        return 0
+    migrated = 0
+    for p in cache_dir.glob("candidate_*.json"):
+        try:
+            cached = json.loads(p.read_text(encoding="utf-8"))
+            if not isinstance(cached, dict):
+                continue
+            invites = cached.get("goodfit_invites", {})
+            if not isinstance(invites, dict):
+                continue
+            if old_role_id in invites and new_role_id not in invites:
+                invites[new_role_id] = invites[old_role_id]
+                cached["goodfit_invites"] = invites
+                p.write_text(json.dumps(cached), encoding="utf-8")
+                migrated += 1
+        except Exception:
+            pass
+    if migrated:
+        print(f"[Goodfit] Migrated {migrated} invite records from '{old_role_id}' to '{new_role_id}'", flush=True)
+    return migrated
 
 
 def _save_goodfit_invite(candidate_id: str, role_id: str, invite_data: dict) -> None:

@@ -149,6 +149,37 @@ def is_excluded_stage(value: Any) -> bool:
 
 
 _STAGE_SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), '../../cache/stage_snapshots')
+_STAGE_ID_CACHE_PATH = os.path.join(os.path.dirname(__file__), '../../cache/manatal_stage_ids.json')
+
+
+def _load_stage_id_cache() -> Dict[str, int]:
+    """Return {normalized_stage_name: stage_id} accumulated from prior syncs."""
+    try:
+        if os.path.exists(_STAGE_ID_CACHE_PATH):
+            return json.load(open(_STAGE_ID_CACHE_PATH, encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _update_stage_id_cache(stage_obj: dict) -> None:
+    """Merge one stage object {id, name} into the persistent cache."""
+    if not isinstance(stage_obj, dict):
+        return
+    sid = stage_obj.get("id")
+    name = stage_obj.get("name", "")
+    if sid is None or not name:
+        return
+    norm = " ".join(str(name).strip().lower().split())
+    try:
+        cache = _load_stage_id_cache()
+        if cache.get(norm) != sid:
+            cache[norm] = sid
+            os.makedirs(os.path.dirname(_STAGE_ID_CACHE_PATH), exist_ok=True)
+            with open(_STAGE_ID_CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump(cache, f)
+    except Exception:
+        pass
 
 
 def load_role_stage_snapshot(role_id: str) -> Dict[str, str]:
@@ -214,6 +245,8 @@ def sync_role_stages(api_token: str, role_id: str, job_ids: List[str]) -> Dict[s
                 cand = match.get("candidate") or {}
                 cand_id = cand.get("id") if isinstance(cand, dict) else cand
                 stage_obj = match.get("stage") or match.get("job_pipeline_stage") or {}
+                if isinstance(stage_obj, dict) and stage_obj.get("id"):
+                    _update_stage_id_cache(stage_obj)
                 stage_name = stage_obj.get("name", "") if isinstance(stage_obj, dict) else ""
                 if cand_id is not None:
                     stages[str(cand_id)] = str(stage_name)
@@ -916,7 +949,7 @@ def update_match_stage(api_token: str, job_id: str, candidate_id: str, stage_nam
     }
     base_url = f"https://api.manatal.com/open/v3/jobs/{job_id}/matches/"
 
-    # Step 1: find the match record for this candidate
+    # Step 1: find the match record for this candidate; also collect stage IDs seen
     match_id: Optional[int] = None
     page = 1
     while True:
@@ -931,11 +964,13 @@ def update_match_stage(api_token: str, job_id: str, candidate_id: str, stage_nam
         for match in results:
             if not isinstance(match, dict):
                 continue
+            stage_obj = match.get("stage") or match.get("job_pipeline_stage") or {}
+            if isinstance(stage_obj, dict) and stage_obj.get("id"):
+                _update_stage_id_cache(stage_obj)
             cand = match.get("candidate") or {}
             cand_id = cand.get("id") if isinstance(cand, dict) else cand
             if str(cand_id) == str(candidate_id):
                 match_id = match.get("id")
-                break
         if match_id is not None:
             break
         if len(results) < 100:
@@ -946,24 +981,13 @@ def update_match_stage(api_token: str, job_id: str, candidate_id: str, stage_nam
         print(f"[Manatal] No match found for candidate {candidate_id} in job {job_id}", flush=True)
         return False
 
-    # Step 2: look up the pipeline stage ID
+    # Step 2: look up the stage ID from the accumulated cache (pipeline-stages endpoint is not available)
     target_stage_id: Optional[int] = None
     target_norm = " ".join(stage_name.strip().lower().split())
-    stages_url = f"https://api.manatal.com/open/v3/jobs/{job_id}/pipeline-stages/"
-    try:
-        resp = httpx.get(stages_url, headers=headers, timeout=15)
-        if resp.status_code == 200:
-            stages_data = resp.json()
-            stages = stages_data.get("results") or stages_data.get("data") or stages_data
-            if isinstance(stages, list):
-                for stage in stages:
-                    if isinstance(stage, dict):
-                        sn = " ".join(str(stage.get("name", "")).strip().lower().split())
-                        if sn == target_norm:
-                            target_stage_id = stage.get("id")
-                            break
-    except Exception as e:
-        print(f"[Manatal] Could not fetch pipeline stages for job {job_id}: {e}", flush=True)
+    stage_id_cache = _load_stage_id_cache()
+    target_stage_id = stage_id_cache.get(target_norm)
+    if target_stage_id is None:
+        print(f"[Manatal] Stage '{stage_name}' not in ID cache; will attempt name-based PATCH", flush=True)
 
     # Step 3: PATCH the match
     patch_url = f"https://api.manatal.com/open/v3/jobs/{job_id}/matches/{match_id}/"
