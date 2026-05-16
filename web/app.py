@@ -631,7 +631,9 @@ def role_detail(role_id: str):
 
     # Load the most recently synced stage snapshot (local file read — no API call).
     # Use Sync Stages button to refresh from Manatal when candidates have moved pipeline stages.
+    # The snapshot contains ALL stages (not just allowed ones) so its length is the true Manatal total.
     live_stages = load_role_stage_snapshot(role_id)
+    total_in_manatal = len(live_stages)  # all stages including excluded ones
 
     # Overwrite each candidate's manatal_stage with the synced value so the column is current
     for c in candidates:
@@ -653,7 +655,10 @@ def role_detail(role_id: str):
     role["top_candidate_count"] = len(role_result.get("top_candidates", []))
     role["llm_evaluated_candidates"] = int(role_result.get("llm_evaluated_candidates", 0))
     role["total_ranked_candidates"] = int(role_result.get("total_ranked_candidates", 0))
-    role["total_candidates_in_pool"] = int(role_result.get("total_candidates_in_pool", 0))
+    pool_count = int(role_result.get("total_candidates_in_pool", 0))
+    role["total_candidates_in_pool"] = pool_count
+    # Use stage snapshot total as the true Manatal count; fall back to pool count if no snapshot yet.
+    role["total_in_manatal"] = max(pool_count, total_in_manatal)
     role["tier_b"] = sum(1 for c in candidates if str(c.get("tier", "")).upper() == "B")
     role["last_ran_at"] = role_result.get("ran_at", "")
     last_ran_at = _parse_iso_utc(role["last_ran_at"])
