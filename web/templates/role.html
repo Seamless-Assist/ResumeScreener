@@ -38,11 +38,19 @@
 {% set rr = request.args.get('rerank') %}
 {% if rr %}
 <div style="margin-bottom:14px;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:600;
-            {% if rr == 'ok' or rr == 'running' %}background:rgba(137,148,129,.16);color:#2f4a34;border:1px solid rgba(137,148,129,.35);
+            {% if rr == 'ok' or rr == 'running' or rr == 'cancelled' %}background:rgba(137,148,129,.16);color:#2f4a34;border:1px solid rgba(137,148,129,.35);
             {% else %}background:rgba(205,60,0,.08);color:#7a2d00;border:1px solid rgba(205,60,0,.22);{% endif %}">
   {% if rr == 'running' %}
     <div style="display:flex;flex-direction:column;gap:8px;">
-      <div>Re-rank is running. Progress updates will appear automatically.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <span>Re-rank is running. Progress updates will appear automatically.</span>
+        <button id="rerank-stop-btn"
+                onclick="cancelRerank()"
+                style="padding:4px 12px;background:transparent;color:#7a2d00;border:1px solid rgba(205,60,0,.5);border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;"
+                onmouseover="this.style.background='rgba(205,60,0,.08)'" onmouseout="this.style.background='transparent'">
+          Stop
+        </button>
+      </div>
       <div style="height:8px;background:rgba(17,16,15,.10);border-radius:999px;overflow:hidden;">
         <div id="rerank-progress-fill" style="height:100%;width:8%;background:#5D1C34;transition:width .35s ease;"></div>
       </div>
@@ -54,6 +62,8 @@
     </div>
   {% elif rr == 'ok' %}
     Re-rank completed. Results have been refreshed.
+  {% elif rr == 'cancelled' %}
+    Re-rank was stopped. Results from the previous run are still shown below.
   {% elif rr == 'overrides-cleared' %}
     Session overrides cleared. Defaults are active again.
   {% elif rr == 'no-job-id' %}
@@ -729,6 +739,22 @@ function prepareOverridesForSubmit() {
   syncKeywordsInput();
 }
 
+function cancelRerank() {
+  var params = new URLSearchParams(window.location.search);
+  var jobId = params.get('job') || '';
+  if (!jobId) { return; }
+  var btn = document.getElementById('rerank-stop-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
+  fetch('/role/{{ role.id }}/rerank-cancel/' + encodeURIComponent(jobId), { method: 'POST', cache: 'no-store' })
+    .then(function(res) { return res.json(); })
+    .then(function() {
+      window.location.href = '/role/{{ role.id }}?rerank=cancelled';
+    })
+    .catch(function() {
+      window.location.href = '/role/{{ role.id }}?rerank=cancelled';
+    });
+}
+
 function startRerankProgressPolling() {
   var params = new URLSearchParams(window.location.search);
   var state = params.get('rerank') || '';
@@ -811,7 +837,7 @@ function startRerankProgressPolling() {
           window.location.href = '/role/{{ role.id }}?rerank=ok';
           return;
         }
-        if (data.status === 'failed') {
+        if (data.status === 'failed' || data.status === 'cancelled') {
           done = true;
           stopHeartbeat();
           window.location.href = '/role/{{ role.id }}?rerank=' + (data.done_state || 'failed') +

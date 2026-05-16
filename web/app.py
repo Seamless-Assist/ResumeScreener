@@ -411,6 +411,12 @@ def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_d
         _update_rerank_job(job_id, status="failed", progress=100, message="Failed to start rerank", done_state="error")
         return
 
+    # Store proc reference so the cancel endpoint can terminate it.
+    with RERANK_LOCK:
+        job = RERANK_JOBS.get(job_id)
+        if job:
+            job["_proc"] = proc
+
     progress = 10
     last_line = "Running rerank"
     current_source_job_id = ""
@@ -500,10 +506,29 @@ def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_d
                 display_message = f"{phase_prefix}{line}"
 
             _update_rerank_job(job_id, progress=progress, message=display_message[-220:])
+
+            # Check if the job was cancelled while we were reading output.
+            with RERANK_LOCK:
+                current_status = (RERANK_JOBS.get(job_id) or {}).get("status")
+            if current_status == "cancelled":
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+                proc.wait()
+                return
+
     except Exception as exc:
         app.logger.warning("rerank output read failed for role %s: %s", role_id, exc)
 
     return_code = proc.wait()
+
+    # If cancelled, the status was already set by the cancel endpoint.
+    with RERANK_LOCK:
+        current_status = (RERANK_JOBS.get(job_id) or {}).get("status")
+    if current_status == "cancelled":
+        return
+
     if return_code == 0:
         publish_message = "Re-rank completed"
         try:
@@ -975,6 +1000,35 @@ def role_rerank_status(role_id: str, job_id: str):
             "done_state": job.get("done_state", ""),
         }
     )
+
+
+@app.route("/role/<role_id>/rerank-cancel/<job_id>", methods=["POST"])
+def role_rerank_cancel(role_id: str, job_id: str):
+    session_id = _get_session_id(create=False)
+    with RERANK_LOCK:
+        job = RERANK_JOBS.get(job_id)
+        if (
+            not job
+            or str(job.get("role_id")) != str(role_id)
+            or str(job.get("session_id", "")) != str(session_id or "")
+        ):
+            return jsonify({"ok": False, "error": "job-not-found"}), 404
+        if job.get("status") not in ("running",):
+            return jsonify({"ok": False, "error": "not-running"}), 409
+        proc = job.get("_proc")
+        job["status"] = "cancelled"
+        job["progress"] = 100
+        job["message"] = "Re-rank stopped by user"
+        job["done_state"] = "cancelled"
+        job["updated_at"] = int(time.time())
+
+    if proc is not None:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
+    return jsonify({"ok": True})
 
 
 @app.route("/role/<role_id>/clear-overrides")

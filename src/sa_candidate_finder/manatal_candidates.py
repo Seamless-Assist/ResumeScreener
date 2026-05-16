@@ -129,6 +129,9 @@ def _sanitize_resume_text(resume_text: str) -> str:
 _ALLOWED_STAGES: set[str] = {
     "new candidates",
     "filtered resume",
+    "goodfit interview sent",
+    "goodfit interview approved",
+    "goodfit interview failed",
 }
 
 
