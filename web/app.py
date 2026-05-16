@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from sa_candidate_finder.manatal_jobs import fetch_all_jobs
-from sa_candidate_finder.manatal_candidates import is_excluded_stage, load_role_stage_snapshot, sync_role_stages, invalidate_stage_snapshot, update_stage_snapshot_entry
+from sa_candidate_finder.manatal_candidates import is_excluded_stage, load_role_stage_snapshot, is_full_sync_snapshot, sync_role_stages, invalidate_stage_snapshot, update_stage_snapshot_entry
 from sa_candidate_finder.secrets import MANATAL_API_KEY, OPENAI_API_KEY, MANATAL_BASE_URL, GOODFIT_API_KEY
 from openai import OpenAI as _OpenAI
 
@@ -644,20 +644,40 @@ def role_detail(role_id: str):
         if live is not None:
             c["manatal_stage"] = live
 
-    # When a stage snapshot exists, use it as the authoritative list of who belongs to this role.
-    # Without this, Phase-2 "global pool" candidates (fetched from the entire Manatal database to
-    # fill a thin applied pool) appear in the ranked list even though they never applied here.
-    # Phase-2 candidates have no manatal_stage and are absent from the snapshot.
+    # Remove Phase-2 "global pool" candidates — fetched from the entire Manatal database
+    # when the role's applied pool is thin. They appear in results but never applied here.
+    #
+    # Two signals, most to least precise:
+    # 1. is_applied field (set by CLI since the last fix): directly marks Phase-2 as False.
+    # 2. Full-sync snapshot membership: when the snapshot came from sync_role_stages (not just
+    #    individual Goodfit invite writes), its IDs are authoritative for who applied.
+    #    Partial snapshots (1-3 entries from invite writes) must NOT be used for this.
     unranked_applicant_count = 0
-    if live_stages:
+    has_is_applied = any("is_applied" in c for c in candidates)
+    full_sync = is_full_sync_snapshot(role_id)
+
+    if has_is_applied:
+        # Precise: filter out Phase-2 candidates marked by the CLI.
+        # Keep candidates without the field (old results) so nothing disappears on old data.
+        candidates = [c for c in candidates if c.get("is_applied", True)]
+
+    if live_stages and full_sync:
+        # Comprehensive snapshot: use as authoritative membership list.
         live_stage_ids = set(live_stages.keys())
         results_ids_in_snapshot = {str(c.get("id", "")) for c in candidates if str(c.get("id", "")) in live_stage_ids}
-        # Count snapshot members in allowed stages that have no results entry yet (need re-rank)
         unranked_applicant_count = sum(
             1 for cid, stage in live_stages.items()
             if cid not in results_ids_in_snapshot and not is_excluded_stage(stage)
         )
         candidates = [c for c in candidates if str(c.get("id", "")) in live_stage_ids]
+    elif live_stages and not has_is_applied:
+        # Partial snapshot + old results (no is_applied field): count unranked from snapshot
+        # but don't filter candidates since the snapshot is not comprehensive.
+        results_ids = {str(c.get("id", "")) for c in candidates}
+        unranked_applicant_count = sum(
+            1 for cid, stage in live_stages.items()
+            if cid not in results_ids and not is_excluded_stage(stage)
+        )
 
     # Filter out candidates whose current stage is not in the allowed set
     candidates = [c for c in candidates if not is_excluded_stage(c.get("manatal_stage", ""))]

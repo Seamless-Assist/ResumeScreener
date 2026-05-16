@@ -202,6 +202,23 @@ def load_role_stage_snapshot(role_id: str) -> Dict[str, str]:
     return {}
 
 
+def is_full_sync_snapshot(role_id: str) -> bool:
+    """Return True if the stage snapshot was written by a full sync_role_stages call.
+
+    Partial snapshots (written by individual update_stage_snapshot_entry calls when
+    Goodfit invites are sent) are not authoritative enough to use as a membership filter.
+    """
+    path = os.path.join(_STAGE_SNAPSHOT_DIR, f"role_{role_id}.json")
+    try:
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                snap = json.load(f)
+            return snap.get('source') == 'full_sync'
+    except Exception:
+        pass
+    return False
+
+
 def sync_role_stages(api_token: str, role_id: str, job_ids: List[str]) -> Dict[str, str]:
     """Fetch current pipeline stages for all candidates in the role from Manatal.
 
@@ -260,7 +277,7 @@ def sync_role_stages(api_token: str, role_id: str, job_ids: List[str]) -> Dict[s
     path = os.path.join(_STAGE_SNAPSHOT_DIR, f"role_{role_id}.json")
     try:
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump({'fetched_at': time.time(), 'stages': stages}, f)
+            json.dump({'fetched_at': time.time(), 'source': 'full_sync', 'stages': stages}, f)
     except Exception as e:
         print(f"[SyncStages] Failed to write snapshot: {e}", flush=True)
 

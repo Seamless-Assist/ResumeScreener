@@ -229,11 +229,13 @@ def agentic_search_cmd(
     log("[AgenticSearch] Phase 1: Fetching all role candidates...")
     all_role_candidates: list = []
     seen_ids: set = set()
+    applied_candidate_ids: set = set()  # IDs of candidates who applied to this role (Phase 1)
     for jid in all_role_job_ids:
         for c in fetch_candidates_by_job(MANATAL_API_KEY, jid):
             if str(c.id) not in seen_ids:
                 all_role_candidates.append(c)
                 seen_ids.add(str(c.id))
+                applied_candidate_ids.add(str(c.id))
     print(f"[DEBUG] Phase 1: {len(all_role_candidates)} unique candidates across all role JDs.", flush=True)
     log(f"[AgenticSearch] Phase 1: {len(all_role_candidates)} unique candidates across all role JDs.")
 
