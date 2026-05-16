@@ -209,6 +209,11 @@
            Reset
         </a>
       </div>
+      <p style="margin-top:10px;font-size:11px;color:#6b6560;line-height:1.5;">
+        <strong>Re-rank</strong> uses the cached job description (up to 7 days old) — use this when nothing in Manatal has changed.
+        <strong>Refresh &amp; Re-rank</strong> pulls the latest job description and title from Manatal first — use this after editing the JD or renaming the role.
+        <strong>Sync Stages</strong> updates candidate pipeline stages from Manatal without re-ranking.
+      </p>
     </form>
   </div>
 </div>
@@ -399,6 +404,9 @@
       </button>
     </div>
     <span style="font-size:11px;color:#6b6560;">This run can take a few minutes. Progress will update automatically.</span>
+    <span style="font-size:11px;color:#6b6560;margin-top:4px;display:block;">
+      <strong>Rank Candidates</strong> uses cached Manatal data. <strong>Refresh &amp; Re-rank</strong> pulls the latest job description from Manatal first (use after editing the JD).
+    </span>
   </form>
 </div>
 {% endif %}
