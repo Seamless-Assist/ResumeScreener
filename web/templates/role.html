@@ -268,6 +268,14 @@
   </div>
 </div>
 
+{% if role.unranked_applicant_count %}
+<div style="margin-bottom:14px;padding:10px 14px;border-radius:10px;background:#fff7ec;border:1px solid rgba(166,125,68,.35);font-size:12px;color:#6b4e22;line-height:1.5;">
+  <strong>{{ role.unranked_applicant_count }} applicant{{ 's' if role.unranked_applicant_count != 1 else '' }} not yet ranked.</strong>
+  These candidates are in Manatal but were not included in the last re-rank (they may have been added or moved after the last run).
+  Run <strong>Refresh &amp; Re-rank</strong> to score all applicants.
+</div>
+{% endif %}
+
 <div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;overflow:hidden;">
   <div style="padding:16px 24px;border-bottom:1px solid #CDBCAB;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
     <h2 style="font-size:13px;font-weight:700;color:#11100F;letter-spacing:.02em;">Top candidates for {{ role.name }}</h2>

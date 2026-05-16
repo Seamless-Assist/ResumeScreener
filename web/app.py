@@ -544,12 +544,15 @@ def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_d
 
                 # Refresh the stage snapshot from the results so role_detail shows
                 # the correct stages immediately without needing a manual Sync Stages.
+                # Only include candidates who were fetched from this role's Manatal job
+                # matches (they have a manatal_stage set). Phase-2 global-pool candidates
+                # have an empty stage and must not be written into this role's snapshot.
                 try:
                     result_data = json.loads(result_text)
                     fresh_stages = {
                         str(c["id"]): c.get("manatal_stage", "")
                         for c in result_data.get("candidates", [])
-                        if c.get("id") is not None
+                        if c.get("id") is not None and c.get("manatal_stage")
                     }
                     if fresh_stages:
                         from sa_candidate_finder.manatal_candidates import update_stage_snapshot_entry
@@ -641,6 +644,21 @@ def role_detail(role_id: str):
         if live is not None:
             c["manatal_stage"] = live
 
+    # When a stage snapshot exists, use it as the authoritative list of who belongs to this role.
+    # Without this, Phase-2 "global pool" candidates (fetched from the entire Manatal database to
+    # fill a thin applied pool) appear in the ranked list even though they never applied here.
+    # Phase-2 candidates have no manatal_stage and are absent from the snapshot.
+    unranked_applicant_count = 0
+    if live_stages:
+        live_stage_ids = set(live_stages.keys())
+        results_ids_in_snapshot = {str(c.get("id", "")) for c in candidates if str(c.get("id", "")) in live_stage_ids}
+        # Count snapshot members in allowed stages that have no results entry yet (need re-rank)
+        unranked_applicant_count = sum(
+            1 for cid, stage in live_stages.items()
+            if cid not in results_ids_in_snapshot and not is_excluded_stage(stage)
+        )
+        candidates = [c for c in candidates if str(c.get("id", "")) in live_stage_ids]
+
     # Filter out candidates whose current stage is not in the allowed set
     candidates = [c for c in candidates if not is_excluded_stage(c.get("manatal_stage", ""))]
     # Sort: Tier A → B → C → untiered (disqualified or keyword-only), then by score desc within each group
@@ -721,6 +739,8 @@ def role_detail(role_id: str):
             if norm_stage in _goodfit_stages:
                 invite = {"application_id": None, "direct_apply_url": None, "stage_based": True}
         c["goodfit_invite"] = invite
+
+    role["unranked_applicant_count"] = unranked_applicant_count
 
     return render_template("role.html", role=role, candidates=candidates)
 
