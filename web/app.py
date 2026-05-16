@@ -536,10 +536,41 @@ def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_d
             global_result_path = _role_results_path(role_id)
             if session_result_path.exists():
                 global_result_path.parent.mkdir(parents=True, exist_ok=True)
+                result_text = session_result_path.read_text(encoding="utf-8")
                 tmp_path = global_result_path.parent / f".{global_result_path.name}.{job_id}.tmp"
-                tmp_path.write_text(session_result_path.read_text(encoding="utf-8"), encoding="utf-8")
+                tmp_path.write_text(result_text, encoding="utf-8")
                 tmp_path.replace(global_result_path)
                 publish_message = "Re-rank completed and published"
+
+                # Refresh the stage snapshot from the results so role_detail shows
+                # the correct stages immediately without needing a manual Sync Stages.
+                try:
+                    result_data = json.loads(result_text)
+                    fresh_stages = {
+                        str(c["id"]): c.get("manatal_stage", "")
+                        for c in result_data.get("candidates", [])
+                        if c.get("id") is not None
+                    }
+                    if fresh_stages:
+                        from sa_candidate_finder.manatal_candidates import update_stage_snapshot_entry
+                        from sa_candidate_finder.manatal_candidates import _STAGE_SNAPSHOT_DIR
+                        import os as _os
+                        snap_path = _os.path.join(_STAGE_SNAPSHOT_DIR, f"role_{role_id}.json")
+                        _os.makedirs(_STAGE_SNAPSHOT_DIR, exist_ok=True)
+                        # Merge into existing snapshot (preserves any manual Sync Stages entries
+                        # for candidates not in this result set, e.g. excluded-stage candidates).
+                        try:
+                            import json as _json
+                            existing_snap = {}
+                            if _os.path.exists(snap_path):
+                                existing_snap = _json.load(open(snap_path, encoding="utf-8")).get("stages", {})
+                            existing_snap.update(fresh_stages)
+                            with open(snap_path, "w", encoding="utf-8") as _f:
+                                _json.dump({"fetched_at": time.time(), "stages": existing_snap}, _f)
+                        except Exception as snap_exc:
+                            app.logger.warning("stage snapshot merge failed: %s", snap_exc)
+                except Exception as snap_exc:
+                    app.logger.warning("stage snapshot update from results failed: %s", snap_exc)
             else:
                 publish_message = "Re-rank completed (publish skipped: no result file)"
         except Exception as exc:
@@ -673,9 +704,17 @@ def role_detail(role_id: str):
         _set_role_session_disabled_hard_filters(role_id, sanitized_disabled)
     role["session_disabled_hard_filters"] = sanitized_disabled
 
-    # Attach Goodfit invite status to each candidate
+    # Attach Goodfit invite status to each candidate.
+    # If no invite record exists but the candidate's Manatal stage indicates they were
+    # already sent to Goodfit (e.g. moved manually in Manatal), synthesise a minimal
+    # record so the UI shows the correct badge instead of "Send to AI Interview".
+    _goodfit_stages = {"goodfit interview sent", "goodfit interview approved", "goodfit interview failed"}
     for c in candidates:
         invite = _load_goodfit_invite(str(c.get("id", "")), role_id)
+        if invite is None:
+            norm_stage = " ".join(str(c.get("manatal_stage", "")).strip().lower().split())
+            if norm_stage in _goodfit_stages:
+                invite = {"application_id": None, "direct_apply_url": None, "stage_based": True}
         c["goodfit_invite"] = invite
 
     return render_template("role.html", role=role, candidates=candidates)

@@ -357,6 +357,7 @@
           {% endif %}
         </td>
         <td style="padding:10px 16px;text-align:center;" id="gf-cell-{{ c.id }}">
+          {% set _norm_stage = (c.manatal_stage or "")|lower|trim %}
           {% if c.goodfit_invite and c.goodfit_invite.application_id %}
             {% set apply_url = c.goodfit_invite.direct_apply_url or "" %}
             <span style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center;">
@@ -369,6 +370,14 @@
                       onmouseover="this.style.background='rgba(26,102,68,.1)'" onmouseout="this.style.background='transparent'">📋 Copy Link</button>
               {% endif %}
             </span>
+          {% elif c.goodfit_invite and c.goodfit_invite.stage_based %}
+            {% if _norm_stage == "goodfit interview approved" %}
+              <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(30,120,80,.18);color:#1a6644;font-size:11px;font-weight:700;">Interview Approved ✓</span>
+            {% elif _norm_stage == "goodfit interview failed" %}
+              <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(205,60,0,.09);color:#b04000;font-size:11px;font-weight:700;">Interview Failed</span>
+            {% else %}
+              <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(30,120,80,.12);color:#1a6644;font-size:11px;font-weight:700;">Invite Sent ✓</span>
+            {% endif %}
           {% else %}
             <button onclick="event.stopPropagation(); sendGoodfitInvite('{{ role.id }}', '{{ c.id }}')"
                     id="gf-btn-{{ c.id }}"
