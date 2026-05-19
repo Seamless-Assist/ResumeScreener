@@ -268,6 +268,14 @@
   </div>
 </div>
 
+{% if role.llm_eval_failed %}
+<div style="margin-bottom:14px;padding:10px 14px;border-radius:10px;background:#fff0f0;border:1px solid rgba(180,40,40,.35);font-size:12px;color:#7a1a1a;line-height:1.5;">
+  <strong>AI evaluation did not complete for the last run — no tier rankings were assigned.</strong>
+  This usually means the OpenAI API key was missing or the API call failed.
+  Run <strong>Refresh &amp; Re-rank</strong> to retry. If it fails again, check that <code>OPENAI_API_KEY</code> is set correctly in the production environment.
+</div>
+{% endif %}
+
 {% if role.unranked_applicant_count %}
 <div style="margin-bottom:14px;padding:10px 14px;border-radius:10px;background:#fff7ec;border:1px solid rgba(166,125,68,.35);font-size:12px;color:#6b4e22;line-height:1.5;">
   <strong>{{ role.unranked_applicant_count }} applicant{{ 's' if role.unranked_applicant_count != 1 else '' }} not yet ranked.</strong>
@@ -281,7 +289,7 @@
     <h2 style="font-size:13px;font-weight:700;color:#11100F;letter-spacing:.02em;">Top candidates for {{ role.name }}</h2>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <span style="font-size:12px;color:#6b6560;">showing {{ candidates|length }} ranked candidates</span>
-      {% set tier_ab_count = role.tier_a + role.tier_b %}
+      {% set tier_ab_count = role.raw_tier_ab_count or (role.tier_a + role.tier_b) %}
       {% if tier_ab_count > 0 %}
       <a href="/role/{{ role.id }}/download-excel"
          style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#EFE9E1;border:1px solid #CDBCAB;border-radius:8px;font-size:11px;font-weight:700;color:#11100F;text-decoration:none;white-space:nowrap;"

@@ -565,11 +565,17 @@ def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_d
                         try:
                             import json as _json
                             existing_snap = {}
+                            existing_source = None
                             if _os.path.exists(snap_path):
-                                existing_snap = _json.load(open(snap_path, encoding="utf-8")).get("stages", {})
+                                _existing = _json.load(open(snap_path, encoding="utf-8"))
+                                existing_snap = _existing.get("stages", {})
+                                existing_source = _existing.get("source")
                             existing_snap.update(fresh_stages)
+                            snap_payload = {"fetched_at": time.time(), "stages": existing_snap}
+                            if existing_source:
+                                snap_payload["source"] = existing_source
                             with open(snap_path, "w", encoding="utf-8") as _f:
-                                _json.dump({"fetched_at": time.time(), "stages": existing_snap}, _f)
+                                _json.dump(snap_payload, _f)
                         except Exception as snap_exc:
                             app.logger.warning("stage snapshot merge failed: %s", snap_exc)
                 except Exception as snap_exc:
@@ -612,6 +618,26 @@ def refresh_roles():
         return redirect(url_for("index", refreshed="error"))
 
 
+@app.route("/api/test-openai")
+def test_openai():
+    """Diagnostic: test OpenAI connectivity and report the exact error if any."""
+    key = OPENAI_API_KEY
+    if not key:
+        return jsonify({"ok": False, "error": "OPENAI_API_KEY is not set in this process environment"}), 500
+    try:
+        from openai import OpenAI as _OpenAI
+        client = _OpenAI(api_key=key, timeout=15)
+        resp = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": "Reply with the single word: OK"}],
+            max_tokens=5,
+        )
+        reply = (resp.choices[0].message.content or "").strip()
+        return jsonify({"ok": True, "reply": reply, "model": "gpt-4.1-mini", "key_prefix": key[:8] + "..."})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc), "error_type": type(exc).__name__, "key_prefix": key[:8] + "..."}), 500
+
+
 @app.route("/health")
 def health_check():
     """Health check endpoint for monitoring."""
@@ -631,6 +657,12 @@ def role_detail(role_id: str):
 
     role_result = _load_role_results(role_id) or {}
     candidates = role_result.get("candidates", [])
+    # Raw tier A/B count from unfiltered JSON — used for the Excel download button.
+    # The display list is stage-filtered so some tier A/B may not be visible, but we
+    # still want to allow downloading them (they may just be in a later pipeline stage).
+    raw_tier_ab_count = sum(
+        1 for c in candidates if str(c.get("tier", "")).upper() in ("A", "B")
+    )
 
     # Load the most recently synced stage snapshot (local file read — no API call).
     # Use Sync Stages button to refresh from Manatal when candidates have moved pipeline stages.
@@ -697,7 +729,15 @@ def role_detail(role_id: str):
     role["total_candidates_in_pool"] = pool_count
     # Use stage snapshot total as the true Manatal count; fall back to pool count if no snapshot yet.
     role["total_in_manatal"] = max(pool_count, total_in_manatal)
+    role["tier_a"] = sum(1 for c in candidates if str(c.get("tier", "")).upper() == "A")
     role["tier_b"] = sum(1 for c in candidates if str(c.get("tier", "")).upper() == "B")
+    # Detect silent LLM failure: qualified candidates with no tier means the OpenAI call
+    # failed and results were never properly evaluated (a now-fixed bug in the CLI).
+    llm_failure_count = sum(
+        1 for c in candidates
+        if c.get("llm_qualified") and not str(c.get("tier", "")).strip()
+    )
+    role["llm_eval_failed"] = llm_failure_count > 0
     role["last_ran_at"] = role_result.get("ran_at", "")
     last_ran_at = _parse_iso_utc(role["last_ran_at"])
     live_requirements = _get_role_session_requirements(role_id) or {}
@@ -762,6 +802,7 @@ def role_detail(role_id: str):
 
     role["unranked_applicant_count"] = unranked_applicant_count
 
+    role["raw_tier_ab_count"] = raw_tier_ab_count
     return render_template("role.html", role=role, candidates=candidates)
 
 

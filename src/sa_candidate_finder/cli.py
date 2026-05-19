@@ -405,10 +405,16 @@ def agentic_search_cmd(
         else:
             results = []
     except Exception as exc:
-        print(f"[DEBUG] Claude evaluation failed ({exc}), falling back to keyword scores.", flush=True)
-        log(f"[AgenticSearch] Claude evaluation failed: {exc}")
+        import traceback as _tb
+        _exc_detail = f"{type(exc).__name__}: {exc}"
+        print(f"[DEBUG] Claude evaluation failed — {_exc_detail}", flush=True)
+        print(f"[DEBUG] Traceback:\n{_tb.format_exc()}", flush=True)
+        log(f"[AgenticSearch] Claude evaluation failed: {_exc_detail}")
         from sa_candidate_finder.pipeline.evaluator import disqualified_reasons as _disqualified_reasons
         llm_disqualify_reasons = dict(_disqualified_reasons)
+        # Reset so candidates aren't falsely marked as llm_qualified with no tier.
+        results = []
+        llm_reviewed_ids = set()
     llm_qualified_ids = {str(r.candidate.id) for r in results}
     from sa_candidate_finder.pipeline.evaluator import disqualified_results as _disqualified_results
     # Merge disqualified results into llm_result_by_id so rationale/scores are saved for all LLM-reviewed candidates
