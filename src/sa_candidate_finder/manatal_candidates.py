@@ -153,6 +153,7 @@ def is_excluded_stage(value: Any) -> bool:
 
 _STAGE_SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), '../../cache/stage_snapshots')
 _STAGE_ID_CACHE_PATH = os.path.join(os.path.dirname(__file__), '../../cache/manatal_stage_ids.json')
+_APPLIED_CACHE_DIR = os.path.join(os.path.dirname(__file__), '../../cache/applied_candidates')
 
 
 def _load_stage_id_cache() -> Dict[str, int]:
@@ -294,6 +295,21 @@ def invalidate_stage_snapshot(role_id: str) -> None:
         print(f"[SyncStages] Could not invalidate snapshot for role {role_id}: {e}", flush=True)
 
 
+def invalidate_applied_candidate_cache(job_id: str) -> None:
+    """Delete the applied-candidate ID cache for a job.
+
+    Forces the next fetch_candidates_by_job call to repaginate Manatal /matches
+    instead of trusting the 7-day cached ID list. Use before a re-rank when the
+    rerank pool must include candidates who applied since the cache was written.
+    """
+    path = os.path.join(_APPLIED_CACHE_DIR, f"job_{job_id}.json")
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        print(f"[Cache] Could not invalidate applied cache for job {job_id}: {e}", flush=True)
+
+
 def update_stage_snapshot_entry(role_id: str, candidate_id: str, stage_name: str) -> None:
     """Update a single candidate's stage in the role snapshot without clearing other entries.
 
@@ -334,9 +350,8 @@ def fetch_candidates_by_job(api_token: str, job_id: str, page_size: int = 100) -
     candidates = []
     page = 1
     # Applied candidates cache
-    APPLIED_CACHE_DIR = os.path.join(os.path.dirname(__file__), '../../cache/applied_candidates')
-    os.makedirs(APPLIED_CACHE_DIR, exist_ok=True)
-    applied_cache_path = os.path.join(APPLIED_CACHE_DIR, f"job_{job_id}.json")
+    os.makedirs(_APPLIED_CACHE_DIR, exist_ok=True)
+    applied_cache_path = os.path.join(_APPLIED_CACHE_DIR, f"job_{job_id}.json")
     # Try to load applied candidate IDs from cache (expires after 7 days)
     _APPLIED_CACHE_TTL = 7 * 24 * 3600
     applied_candidate_ids = None
