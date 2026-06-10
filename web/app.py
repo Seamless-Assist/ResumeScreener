@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from sa_candidate_finder.manatal_jobs import fetch_all_jobs
-from sa_candidate_finder.manatal_candidates import is_excluded_stage, load_role_stage_snapshot, is_full_sync_snapshot, sync_role_stages, invalidate_stage_snapshot, update_stage_snapshot_entry
+from sa_candidate_finder.manatal_candidates import is_excluded_stage, load_role_stage_snapshot, is_full_sync_snapshot, sync_role_stages, invalidate_stage_snapshot, update_stage_snapshot_entry, invalidate_applied_candidate_cache
 from sa_candidate_finder.secrets import MANATAL_API_KEY, OPENAI_API_KEY, MANATAL_BASE_URL, GOODFIT_API_KEY
 from openai import OpenAI as _OpenAI
 
@@ -852,6 +852,13 @@ def role_refresh_and_rerank(role_id: str):
     anchor_job_id = _resolve_anchor_job_id(role, role_result)
     if not anchor_job_id:
         return redirect(url_for("role_detail", role_id=effective_role_id, rerank="no-job-id"))
+
+    # Force the CLI to repaginate /matches for every sibling job so candidates who
+    # applied since the cache was written (up to 7 days) are included in the rerank.
+    # Without this, the snapshot can carry applicants the rerank never tried to score,
+    # producing "N applicants not yet ranked" even immediately after a fresh re-rank.
+    for sibling_job_id in role.get("job_ids", []):
+        invalidate_applied_candidate_cache(str(sibling_job_id))
 
     for key, msg in [
         (OPENAI_API_KEY, "OPENAI_API_KEY is not configured. Set OPENAI_API_KEY in the environment."),
