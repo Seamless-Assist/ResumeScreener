@@ -503,6 +503,7 @@ def agentic_search_cmd(
         "anchor_job_id": str(job_id),
         "all_job_ids": all_role_job_ids,
         "total_candidates_in_pool": len(all_role_candidates),
+        "phase1_candidate_ids": [str(c.id) for c in all_role_candidates],
         "total_ranked_candidates": len(full_ranked_results),
         "llm_evaluated_candidates": len(llm_reviewed_ids),
         "llm_qualified_candidates": len(llm_qualified_ids),
