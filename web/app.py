@@ -648,6 +648,44 @@ def health_check():
     })
 
 
+def _resolve_git_sha() -> str:
+    """Return the deployed commit SHA, or "unknown" if it can't be determined.
+
+    Tries `git rev-parse HEAD` first (works when .git is in the image), then
+    falls back to common build-time env vars Coolify / Docker / CI typically set.
+    """
+    try:
+        import subprocess
+        out = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(ROOT),
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+        sha = out.decode().strip()
+        if sha:
+            return sha
+    except Exception:
+        pass
+    for var in ("SOURCE_COMMIT", "GIT_COMMIT", "COMMIT_SHA", "GIT_SHA", "RAILWAY_GIT_COMMIT_SHA"):
+        sha = os.environ.get(var, "").strip()
+        if sha:
+            return sha
+    return "unknown"
+
+
+_GIT_SHA = _resolve_git_sha()
+
+
+@app.route("/version")
+def version_check():
+    """Report the deployed commit SHA so we can confirm what's actually running."""
+    return jsonify({
+        "git_sha": _GIT_SHA,
+        "git_short": _GIT_SHA[:7] if _GIT_SHA != "unknown" else "unknown",
+    })
+
+
 @app.route("/role/<role_id>")
 def role_detail(role_id: str):
     roles = _build_roles()
@@ -693,22 +731,28 @@ def role_detail(role_id: str):
         # Keep candidates without the field (old results) so nothing disappears on old data.
         candidates = [c for c in candidates if c.get("is_applied", True)]
 
+    # "Considered" = IDs the rerank actually evaluated in Phase 1, regardless of
+    # whether they scored above zero. Prefer the explicit list written by recent
+    # CLI runs; fall back to the displayed candidates list for older result files.
+    # Without this fallback distinction, candidates that the rerank DID process
+    # but filtered out (keyword score 0) would be counted as "not yet ranked".
+    phase1_ids: set = {str(cid) for cid in role_result.get("phase1_candidate_ids", []) if cid}
+    considered_ids: set = phase1_ids or {str(c.get("id", "")) for c in candidates}
+
     if live_stages and full_sync:
         # Comprehensive snapshot: use as authoritative membership list.
         live_stage_ids = set(live_stages.keys())
-        results_ids_in_snapshot = {str(c.get("id", "")) for c in candidates if str(c.get("id", "")) in live_stage_ids}
         unranked_applicant_count = sum(
             1 for cid, stage in live_stages.items()
-            if cid not in results_ids_in_snapshot and not is_excluded_stage(stage)
+            if cid not in considered_ids and not is_excluded_stage(stage)
         )
         candidates = [c for c in candidates if str(c.get("id", "")) in live_stage_ids]
     elif live_stages and not has_is_applied:
         # Partial snapshot + old results (no is_applied field): count unranked from snapshot
         # but don't filter candidates since the snapshot is not comprehensive.
-        results_ids = {str(c.get("id", "")) for c in candidates}
         unranked_applicant_count = sum(
             1 for cid, stage in live_stages.items()
-            if cid not in results_ids and not is_excluded_stage(stage)
+            if cid not in considered_ids and not is_excluded_stage(stage)
         )
 
     # Filter out candidates whose current stage is not in the allowed set
