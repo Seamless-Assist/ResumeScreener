@@ -60,6 +60,40 @@ SESSION_RESULTS_ROOT = ROOT / "cache" / "session_results"
 
 RERANK_JOBS: dict[str, dict] = {}
 RERANK_LOCK = threading.Lock()
+RERANK_JOBS_DIR = ROOT / "cache" / "rerank_jobs"
+RERANK_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _rerank_job_disk_path(job_id: str) -> Path:
+    return RERANK_JOBS_DIR / f"{job_id}.json"
+
+
+def _persist_rerank_job(job_id: str, payload: dict) -> None:
+    """Write a rerank job snapshot to disk so it survives process restarts.
+
+    Excludes the _proc field (subprocess.Popen handle is not serializable and is
+    only meaningful inside the worker process that owns it).
+    """
+    serializable = {k: v for k, v in payload.items() if k != "_proc"}
+    path = _rerank_job_disk_path(job_id)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(serializable, f)
+        os.replace(tmp, path)
+    except Exception as exc:
+        app.logger.warning("rerank job persist failed for %s: %s", job_id, exc)
+
+
+def _load_rerank_job_from_disk(job_id: str) -> Optional[dict]:
+    path = _rerank_job_disk_path(job_id)
+    try:
+        if path.exists():
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
 
 STATUS_META: dict[str, dict] = {
     "Sourcing": {"color": "gold", "hex": "#A67D44"},
@@ -376,6 +410,7 @@ def _create_rerank_job(role_id: str, session_id: str) -> str:
     }
     with RERANK_LOCK:
         RERANK_JOBS[job_id] = payload
+        _persist_rerank_job(job_id, payload)
     return job_id
 
 
@@ -383,9 +418,15 @@ def _update_rerank_job(job_id: str, **fields) -> None:
     with RERANK_LOCK:
         job = RERANK_JOBS.get(job_id)
         if not job:
-            return
+            # Rehydrate from disk so updates survive a process restart mid-rerank.
+            disk_job = _load_rerank_job_from_disk(job_id)
+            if disk_job is None:
+                return
+            RERANK_JOBS[job_id] = disk_job
+            job = disk_job
         job.update(fields)
         job["updated_at"] = int(time.time())
+        _persist_rerank_job(job_id, job)
 
 
 def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_dir: str) -> None:
@@ -684,6 +725,42 @@ def version_check():
         "git_sha": _GIT_SHA,
         "git_short": _GIT_SHA[:7] if _GIT_SHA != "unknown" else "unknown",
     })
+
+
+@app.route("/api/rerank-jobs/recent")
+def recent_rerank_jobs():
+    """Diagnostic: list the most recent rerank jobs and their final status.
+
+    Pulls from the on-disk rerank job snapshots so failed jobs are still visible
+    even after the process restarted. The session_id is omitted; everything else
+    needed to debug a failed re-rank is included.
+    """
+    try:
+        files = sorted(
+            RERANK_JOBS_DIR.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )[:25]
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    jobs = []
+    for p in files:
+        try:
+            with open(p, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        jobs.append({
+            "job_id": data.get("id", p.stem),
+            "role_id": data.get("role_id"),
+            "status": data.get("status"),
+            "done_state": data.get("done_state"),
+            "progress": data.get("progress"),
+            "message": data.get("message"),
+            "created_at": data.get("created_at"),
+            "updated_at": data.get("updated_at"),
+        })
+    return jsonify({"ok": True, "jobs": jobs})
 
 
 @app.route("/role/<role_id>")
@@ -1157,6 +1234,13 @@ def role_rerank(role_id: str):
 def role_rerank_status(role_id: str, job_id: str):
     with RERANK_LOCK:
         job = dict(RERANK_JOBS.get(job_id) or {})
+        if not job:
+            # Fall back to disk so a process restart mid-rerank doesn't 404 the
+            # poll and bounce the UI to "?rerank=failed" with no error message.
+            disk_job = _load_rerank_job_from_disk(job_id)
+            if disk_job is not None:
+                RERANK_JOBS[job_id] = disk_job
+                job = dict(disk_job)
 
     session_id = _get_session_id(create=False)
     if (
