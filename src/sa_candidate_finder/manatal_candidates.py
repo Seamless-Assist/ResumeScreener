@@ -139,11 +139,36 @@ def _normalize_stage_name(value: Any) -> str:
     return " ".join(str(value or "").strip().lower().split())
 
 
+# Synthetic stage name written into snapshots/caches when a Manatal /matches
+# record is dropped (recruiter clicked "Drop" on the candidate for this job).
+# Falls outside _ALLOWED_STAGES so is_excluded_stage() naturally excludes it.
+DROPPED_STAGE_LABEL = "Dropped"
+
+
+def is_dropped_match(match: Any) -> bool:
+    """Return True if a raw Manatal /matches record represents a dropped candidate.
+
+    A match is "dropped" when the recruiter clicked Drop on it. Manatal sets
+    `dropped_at` to an ISO timestamp and `is_active` to False. Treat either signal
+    as authoritative — both are written together by Manatal, but checking both
+    guards against future API changes.
+    """
+    if not isinstance(match, dict):
+        return False
+    if match.get("dropped_at"):
+        return True
+    if match.get("is_active") is False:
+        return True
+    return False
+
+
 def is_excluded_stage(value: Any) -> bool:
     """Return True if the candidate should be excluded from ranking.
 
     Candidates are included only when their stage is blank (not yet set) or
-    matches one of the allowed stages exactly.
+    matches one of the allowed stages exactly. The synthetic "Dropped" label
+    written when a Manatal /matches record is dropped naturally falls outside
+    _ALLOWED_STAGES.
     """
     normalized = _normalize_stage_name(value)
     if not normalized:
@@ -269,6 +294,8 @@ def sync_role_stages(api_token: str, role_id: str, job_ids: List[str]) -> Dict[s
                 if isinstance(stage_obj, dict) and stage_obj.get("id"):
                     _update_stage_id_cache(stage_obj)
                 stage_name = stage_obj.get("name", "") if isinstance(stage_obj, dict) else ""
+                if is_dropped_match(match):
+                    stage_name = DROPPED_STAGE_LABEL
                 if cand_id is not None:
                     stages[str(cand_id)] = str(stage_name)
             if len(results) < 100:
@@ -746,6 +773,8 @@ def fetch_candidates_by_job(api_token: str, job_id: str, page_size: int = 100) -
                 _stage_obj = c.get('stage') or c.get('job_pipeline_stage') or {}
                 if isinstance(_stage_obj, dict):
                     _match_stage = str(_stage_obj.get('name', '') or '')
+                if is_dropped_match(c):
+                    _match_stage = DROPPED_STAGE_LABEL
             if _is_excluded_stage(_match_stage):
                 filtered_status_total += 1
                 stage_key = _normalize_stage_name(_match_stage)
