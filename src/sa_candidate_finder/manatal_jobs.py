@@ -2,6 +2,8 @@ import httpx
 import re as _re
 from typing import List, Dict, Any, Optional
 
+from sa_candidate_finder.manatal_pagination import has_next_page, is_invalid_page_response
+
 
 def strip_html(text: str) -> str:
     """Strip HTML tags and decode common entities, returning clean plain text."""
@@ -76,6 +78,7 @@ def fetch_all_jobs(api_token: str, page_size: int = 100, force_refresh: bool = F
     while True:
         params = {"page": page, "page_size": page_size}
         last_exception = None
+        exhausted = False
         for attempt in range(max_retries):
             try:
                 throttle()
@@ -90,6 +93,11 @@ def fetch_all_jobs(api_token: str, page_size: int = 100, force_refresh: bool = F
                     import time as _time
                     _time.sleep(wait_s)
                     continue
+                if is_invalid_page_response(resp.status_code, page):
+                    # Walked past the last page — Manatal answers 404 "Invalid page."
+                    print(f"[Pagination] Page {page} does not exist; treating as end of jobs list.", flush=True)
+                    exhausted = True
+                    break
                 if resp.status_code >= 400:
                     print(f"[HTTP Error] Status: {resp.status_code}, Content: {resp.text}")
                 resp.raise_for_status()
@@ -117,12 +125,14 @@ def fetch_all_jobs(api_token: str, page_size: int = 100, force_refresh: bool = F
             if last_exception:
                 raise last_exception
             raise RuntimeError("Exceeded max retries due to rate limiting or errors.")
+        if exhausted:
+            break
         data = resp.json()
         results = data.get("results") or data.get("data") or data
         if not results or not isinstance(results, list):
             break
         jobs.extend(results)
-        if len(results) < page_size:
+        if not has_next_page(data, results, page_size):
             break
         page += 1
     # Save to cache
