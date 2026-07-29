@@ -7,6 +7,7 @@ from io import BytesIO
 from urllib.parse import parse_qs, urlparse
 from typing import Any, Dict, List, Optional
 from sa_candidate_finder.models import CandidateMeta
+from sa_candidate_finder.manatal_pagination import has_next_page
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +299,7 @@ def sync_role_stages(api_token: str, role_id: str, job_ids: List[str]) -> Dict[s
                     stage_name = DROPPED_STAGE_LABEL
                 if cand_id is not None:
                     stages[str(cand_id)] = str(stage_name)
-            if len(results) < 100:
+            if not has_next_page(data, results, 100):
                 break
             page += 1
 
@@ -855,7 +856,7 @@ def fetch_candidates_by_job(api_token: str, job_id: str, page_size: int = 100) -
                 json.dump(candidate_job_map, f)
         except Exception as e:
             print(f"[Cache] Failed to save candidate-job map: {e}", flush=True)
-        if len(results) < page_size:
+        if not has_next_page(data, results, page_size):
             break
         page += 1
     print(f"[AgenticSearch] {len(unique_candidate_ids)} unique candidates have applied to this job.", flush=True)
@@ -941,7 +942,7 @@ def fetch_all_candidates(api_token: str, page_size: int = 100) -> List[Candidate
             break
         for c in results:
             candidates.append(_parse_candidate(c))
-        if len(results) < page_size:
+        if not has_next_page(data, results, page_size):
             break
         page += 1
     return candidates
@@ -1037,7 +1038,7 @@ def update_match_stage(api_token: str, job_id: str, candidate_id: str, stage_nam
                 match_id = match.get("id")
         if match_id is not None:
             break
-        if len(results) < 100:
+        if not has_next_page(data, results, 100):
             break
         page += 1
 
