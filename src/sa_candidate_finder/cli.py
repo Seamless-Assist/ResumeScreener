@@ -14,6 +14,21 @@ app = typer.Typer(
 )
 
 
+def should_expand_global_pool(
+    *,
+    rerank_fast: bool,
+    good_match_count: int,
+    target_good_matches: int,
+) -> bool:
+    """Return whether this run should search candidates who did not apply.
+
+    Web reranks intentionally use fast mode: recruiters expect the existing
+    applicant pool to be rescored, not a fresh search across the full Manatal
+    database.
+    """
+    return (not rerank_fast) and good_match_count < target_good_matches
+
+
 @app.command("help")
 def help_cmd() -> None:
     """Show all available commands and their inputs."""
@@ -264,7 +279,14 @@ def agentic_search_cmd(
 
     # ── Phase 2: broader pool if quality-gated shortlist is still short ─────
     phase2_target = cfg.phase2_good_match_target
-    if count_good_matches(results) < phase2_target:
+    phase1_good_match_count = count_good_matches(results)
+    phase2_expanded = False
+    if should_expand_global_pool(
+        rerank_fast=rerank_fast,
+        good_match_count=phase1_good_match_count,
+        target_good_matches=phase2_target,
+    ):
+        phase2_expanded = True
         print("[DEBUG] Phase 2: Fetching broader candidate pool...", flush=True)
         log("[AgenticSearch] Phase 2: Fetching broader candidate pool...")
         all_candidates = fetch_all_candidates(MANATAL_API_KEY)
@@ -287,6 +309,13 @@ def agentic_search_cmd(
         results = merge_results([results, phase2_results])
         print(f"[DEBUG] Phase 2: cumulative good matches: {count_good_matches(results)}", flush=True)
         log(f"[AgenticSearch] Phase 2: cumulative good matches: {count_good_matches(results)}")
+    elif rerank_fast and phase1_good_match_count < phase2_target:
+        message = (
+            "[DEBUG] Fast rerank: skipping Phase 2 global candidate search; "
+            f"rescoring {len(all_role_candidates)} applied candidates only."
+        )
+        print(message, flush=True)
+        log(message.removeprefix("[DEBUG] "))
 
     full_ranked_results = results
     # Snapshot matched keywords per candidate (r.strengths = matched keyword list from MCP stub,
@@ -296,6 +325,17 @@ def agentic_search_cmd(
     }
     # Send all candidates who pass the Phase 1 quality gate to LLM evaluation.
     results = [r for r in full_ranked_results if r.fit_score >= effective_good_match_threshold]
+    if rerank_fast and len(results) > cfg.shortlist_size:
+        print(
+            f"[DEBUG] Fast rerank: limiting LLM evaluation from {len(results)} "
+            f"to the top {cfg.shortlist_size} candidates.",
+            flush=True,
+        )
+        log(
+            f"[AgenticSearch] Fast rerank: limiting LLM evaluation from {len(results)} "
+            f"to the top {cfg.shortlist_size} candidates."
+        )
+        results = results[:cfg.shortlist_size]
     llm_eval_limit = len(results)
     print(
         f"[DEBUG] Search results before Claude evaluation: {len(results) if results else 0} "
@@ -509,6 +549,8 @@ def agentic_search_cmd(
         "llm_qualified_candidates": len(llm_qualified_ids),
         "llm_eval_policy": {
             "mode": "quality_gate",
+            "fast_rerank": rerank_fast,
+            "global_pool_expanded": phase2_expanded,
             "good_match_threshold": effective_good_match_threshold,
             "base_good_match_threshold": cfg.min_good_match_score,
             "active_keyword_count": len(keyword_set),

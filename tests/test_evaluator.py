@@ -75,7 +75,7 @@ def test_evaluate_tracks_token_costs(cfg, telemetry):
     assert telemetry.total_cost_usd > 0
 
 
-def test_evaluate_biases_explicit_availability(cfg, telemetry):
+def test_evaluate_does_not_double_count_explicit_availability(cfg, telemetry):
     candidates = [_make_candidate("1", "Alice"), _make_candidate("2", "Bob")]
     llm_output = {
         "candidates": [
@@ -111,6 +111,10 @@ def test_evaluate_biases_explicit_availability(cfg, telemetry):
 
         results = evaluate_candidates("JD text", candidates, [], cfg, telemetry)
 
-    assert results[0].candidate.id == "2"
+    # Availability is already included in the Location & Availability rubric
+    # score, so post-processing must not add another bonus or override fit order.
+    assert results[0].candidate.id == "1"
     assert results[0].rank == 1
-    assert results[1].candidate.id == "1"
+    assert results[1].candidate.id == "2"
+    assert results[1].__dict__["availability_signal"] == "available_now"
+    assert results[1].__dict__["availability_bonus"] == 0.0

@@ -38,10 +38,10 @@ class FakeResponse:
 
 
 @pytest.fixture(autouse=True)
-def no_sleep_no_cache_write(monkeypatch):
-    """Keep tests fast and stop them clobbering the real on-disk caches."""
+def no_sleep_no_cache_write(monkeypatch, tmp_path):
+    """Keep tests fast and route job cache writes to a temporary directory."""
     monkeypatch.setattr(time, "sleep", lambda *_a, **_k: None)
-    monkeypatch.setattr(json, "dump", lambda *_a, **_k: None)
+    monkeypatch.setenv("SA_JOBS_CACHE_PATH", str(tmp_path / "all_jobs.json"))
 
 
 def _exact_multiple_pager(records, page_size, calls):

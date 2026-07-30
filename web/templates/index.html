@@ -7,7 +7,7 @@
 <div style="margin-bottom:24px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
   <div>
     <h1 style="font-size:22px;font-weight:700;color:#11100F;letter-spacing:-.01em;">Roles</h1>
-    <p style="margin-top:4px;font-size:13px;color:#6b6560;">{{ roles|length }} active pipelines — click a role to screen candidates.</p>
+    <p style="margin-top:4px;font-size:13px;color:#6b6560;">{{ active_roles|length }} active and {{ on_hold_roles|length }} on-hold pipelines — click a role to screen candidates.</p>
   </div>
   <form method="post" action="/refresh-roles" style="margin:0;flex-shrink:0;">
     <button type="submit"
@@ -53,20 +53,13 @@
 
 </div>
 
-<!-- Roles table -->
-<div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;overflow:hidden;">
+{% macro roles_table(title, table_roles, empty_message, margin_bottom="0") %}
+<div style="background:#fff;border:1px solid #CDBCAB;border-radius:14px;overflow:hidden;margin-bottom:{{ margin_bottom }};">
 
   <div style="padding:16px 24px;border-bottom:1px solid #CDBCAB;display:flex;align-items:center;justify-content:space-between;">
-    <h2 style="font-size:13px;font-weight:700;color:#11100F;letter-spacing:.02em;">Active Roles</h2>
+    <h2 style="font-size:13px;font-weight:700;color:#11100F;letter-spacing:.02em;">{{ title }}</h2>
     <div style="display:flex;align-items:center;gap:10px;">
-      <span style="font-size:12px;color:#6b6560;">{{ roles|length }} roles</span>
-      <form method="post" action="/refresh-roles" style="margin:0;">
-        <button type="submit"
-                style="padding:6px 10px;border:1px solid #CDBCAB;border-radius:8px;background:#EFE9E1;color:#5D1C34;font-size:11px;font-weight:700;cursor:pointer;"
-                onmouseover="this.style.background='#f7f1ea'" onmouseout="this.style.background='#EFE9E1'">
-          Refresh from Manatal
-        </button>
-      </form>
+      <span style="font-size:12px;color:#6b6560;">{{ table_roles|length }} roles</span>
     </div>
   </div>
 
@@ -82,7 +75,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for r in roles %}
+      {% for r in table_roles %}
       <tr style="border-bottom:1px solid #EFE9E1;transition:background .1s;"
           onmouseover="this.style.background='#FAF7F4'" onmouseout="this.style.background=''">
 
@@ -125,10 +118,18 @@
           </a>
         </td>
       </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" style="padding:22px 24px;color:#6b6560;text-align:center;">{{ empty_message }}</td>
+      </tr>
       {% endfor %}
     </tbody>
   </table></div>
 
 </div>
+{% endmacro %}
+
+{{ roles_table("Active Roles", active_roles, "No active roles.", "20px") }}
+{{ roles_table("On-hold Roles", on_hold_roles, "No roles are currently on hold.") }}
 
 {% endblock %}

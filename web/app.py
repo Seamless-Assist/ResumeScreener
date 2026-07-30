@@ -414,6 +414,43 @@ def _create_rerank_job(role_id: str, session_id: str) -> str:
     return job_id
 
 
+def _find_active_rerank_job(role_id: str, session_id: str) -> Optional[str]:
+    """Find a recently updated in-flight rerank for this role and browser session."""
+    cutoff = int(time.time()) - 15 * 60
+
+    with RERANK_LOCK:
+        memory_jobs = [dict(job) for job in RERANK_JOBS.values()]
+    for job in memory_jobs:
+        if (
+            job.get("status") == "running"
+            and str(job.get("role_id")) == str(role_id)
+            and str(job.get("session_id", "")) == str(session_id)
+            and int(job.get("updated_at", 0) or 0) >= cutoff
+        ):
+            return str(job.get("id") or "")
+
+    # Gunicorn workers do not share memory, so also check the persisted snapshots.
+    try:
+        paths = sorted(
+            RERANK_JOBS_DIR.glob("*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return None
+    for path in paths[:25]:
+        job = _load_rerank_job_from_disk(path.stem)
+        if (
+            job
+            and job.get("status") == "running"
+            and str(job.get("role_id")) == str(role_id)
+            and str(job.get("session_id", "")) == str(session_id)
+            and int(job.get("updated_at", 0) or 0) >= cutoff
+        ):
+            return str(job.get("id") or path.stem)
+    return None
+
+
 def _update_rerank_job(job_id: str, **fields) -> None:
     with RERANK_LOCK:
         job = RERANK_JOBS.get(job_id)
@@ -637,17 +674,32 @@ def _run_rerank_job(job_id: str, role_id: str, cmd: list[str], session_results_d
 @app.context_processor
 def inject_nav_roles():
     roles = _build_roles()
-    nav = sorted(
+    active_nav = sorted(
         [r for r in roles if r.get("status") != "On hold"],
         key=lambda r: r["name"].lower(),
     )
-    return {"nav_roles": nav}
+    on_hold_nav = sorted(
+        [r for r in roles if r.get("status") == "On hold"],
+        key=lambda r: r["name"].lower(),
+    )
+    return {
+        "nav_roles": active_nav,
+        "nav_active_roles": active_nav,
+        "nav_on_hold_roles": on_hold_nav,
+    }
 
 
 @app.route("/")
 def index():
     roles = _build_roles()
-    return render_template("index.html", roles=roles)
+    active_roles = [r for r in roles if r.get("status") != "On hold"]
+    on_hold_roles = [r for r in roles if r.get("status") == "On hold"]
+    return render_template(
+        "index.html",
+        roles=roles,
+        active_roles=active_roles,
+        on_hold_roles=on_hold_roles,
+    )
 
 
 @app.route("/refresh-roles", methods=["POST"])
@@ -964,6 +1016,17 @@ def role_refresh_and_rerank(role_id: str):
     if role_id != effective_role_id:
         _migrate_goodfit_invites(role_id, effective_role_id)
     role_result = _load_role_results(effective_role_id) or _load_role_results(role_id) or {}
+    session_id = _get_session_id(create=True) or uuid.uuid4().hex
+    active_job_id = _find_active_rerank_job(effective_role_id, session_id)
+    if active_job_id:
+        return redirect(
+            url_for(
+                "role_detail",
+                role_id=effective_role_id,
+                rerank="running",
+                job=active_job_id,
+            )
+        )
 
     # Refresh live requirements from Manatal and store in session for display
     snapshot = _refresh_live_requirements(role, role_result)
@@ -1033,7 +1096,6 @@ def role_refresh_and_rerank(role_id: str):
     if session_disabled_hard_filters:
         cmd.extend(["--disable-hard-filter-rules", "||".join(session_disabled_hard_filters)])
 
-    session_id = _get_session_id(create=True) or uuid.uuid4().hex
     session_results_dir = _session_results_dir(session_id)
     session_results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1141,6 +1203,18 @@ def role_rerank(role_id: str):
         abort(404)
 
     role_result = _load_role_results(role_id) or {}
+    session_id = _get_session_id(create=True) or uuid.uuid4().hex
+    active_job_id = _find_active_rerank_job(role_id, session_id)
+    if active_job_id:
+        return redirect(
+            url_for(
+                "role_detail",
+                role_id=role_id,
+                rerank="running",
+                job=active_job_id,
+            )
+        )
+
     anchor_job_id = _resolve_anchor_job_id(role, role_result)
     if not anchor_job_id:
         return redirect(url_for("role_detail", role_id=role_id, rerank="no-job-id"))
@@ -1216,7 +1290,6 @@ def role_rerank(role_id: str):
     if session_disabled_hard_filters:
         cmd.extend(["--disable-hard-filter-rules", "||".join(session_disabled_hard_filters)])
 
-    session_id = _get_session_id(create=True) or uuid.uuid4().hex
     session_results_dir = _session_results_dir(session_id)
     session_results_dir.mkdir(parents=True, exist_ok=True)
 

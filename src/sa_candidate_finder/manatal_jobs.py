@@ -41,9 +41,13 @@ def fetch_all_jobs(api_token: str, page_size: int = 100, force_refresh: bool = F
         "accept": "application/json",
     }
     import os, json
-    CACHE_DIR = os.path.join(os.path.dirname(__file__), '../../cache/jobs')
+    default_cache_dir = os.path.join(os.path.dirname(__file__), '../../cache/jobs')
+    CACHE_PATH = os.getenv(
+        "SA_JOBS_CACHE_PATH",
+        os.path.join(default_cache_dir, 'all_jobs.json'),
+    )
+    CACHE_DIR = os.path.dirname(CACHE_PATH)
     os.makedirs(CACHE_DIR, exist_ok=True)
-    CACHE_PATH = os.path.join(CACHE_DIR, 'all_jobs.json')
     CACHE_EXPIRY = 7 * 24 * 3600  # 7 days
     # Try cache first unless caller forces refresh.
     if (not force_refresh) and os.path.exists(CACHE_PATH):
@@ -136,11 +140,18 @@ def fetch_all_jobs(api_token: str, page_size: int = 100, force_refresh: bool = F
             break
         page += 1
     # Save to cache
+    temp_cache_path = CACHE_PATH + ".tmp"
     try:
-        with open(CACHE_PATH, 'w', encoding='utf-8') as f:
+        with open(temp_cache_path, 'w', encoding='utf-8') as f:
             import time as _time
             json.dump({'fetched_at': _time.time(), 'jobs': jobs}, f)
+        os.replace(temp_cache_path, CACHE_PATH)
         print(f"[Cache] Saved jobs to cache.", flush=True)
     except Exception as e:
         print(f"[Cache] Failed to save jobs cache: {e}", flush=True)
+        try:
+            if os.path.exists(temp_cache_path):
+                os.unlink(temp_cache_path)
+        except OSError:
+            pass
     return jobs

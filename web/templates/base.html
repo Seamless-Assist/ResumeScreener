@@ -138,8 +138,8 @@
       </div>
 
       <div>
-        <p class="nav-label">Active Roles ({{ nav_roles|length }})</p>
-        {% for r in nav_roles %}
+        <p class="nav-label">Active Roles ({{ nav_active_roles|length }})</p>
+        {% for r in nav_active_roles %}
         <a href="/role/{{ r.id }}"
            class="nav-link {% if request.path == '/role/' ~ r.id %}active{% endif %}"
            title="{{ r.name }}">
@@ -154,6 +154,20 @@
         </a>
         {% endfor %}
       </div>
+
+      {% if nav_on_hold_roles %}
+      <div>
+        <p class="nav-label">On-hold Roles ({{ nav_on_hold_roles|length }})</p>
+        {% for r in nav_on_hold_roles %}
+        <a href="/role/{{ r.id }}"
+           class="nav-link {% if request.path == '/role/' ~ r.id %}active{% endif %}"
+           title="{{ r.name }}">
+          <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:#CDBCAB;"></span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.name }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
 
     </nav>
 
